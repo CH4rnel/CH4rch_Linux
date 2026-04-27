@@ -1,0 +1,8 @@
+[2026-04-27T18:31:03+0000] [PACMAN] Running 'pacman -b /home/Ch4rnel_exe/CH4rch_Linux/work/rootfs//var/lib/pacman/ -r /home/Ch4rnel_exe/CH4rch_Linux/work/rootfs -Sy --config=/tmp/pacman.conf.nI00 --disable-sandbox --noconfirm pacman archlinux-keyring'
+[2026-04-27T18:31:03+0000] [PACMAN] synchronizing package lists
+[2026-04-27T18:35:35+0000] [PACMAN] Running 'pacman -b /home/Ch4rnel_exe/CH4rch_Linux/work/rootfs//var/lib/pacman/ -r /home/Ch4rnel_exe/CH4rch_Linux/work/rootfs -Sy --config=/tmp/pacman.conf.pkz0 --disable-sandbox --noconfirm pacman archlinux-keyring'
+[2026-04-27T18:35:35+0000] [PACMAN] synchronizing package lists
+[2026-04-27T18:40:14+0000] [PACMAN] Running 'pacman -Sy --root work/rootfs --dbpath work/rootfs/var/lib/pacman'
+[2026-04-27T18:40:14+0000] [PACMAN] synchronizing package lists
+[2026-04-27T18:41:06+0000] [PACMAN] Running 'pacman --root work/rootfs --dbpath work/rootfs/var/lib/pacman -S bash coreutils util-linux'
+[2026-04-27T18:45:20+0000] [PACMAN] Running 'pacman --root work/rootfs --dbpath work/rootfs/var/lib/pacman -S bash coreutils util-linux'
