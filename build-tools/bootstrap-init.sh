@@ -1,24 +1,25 @@
 #!/bin/bash
 set -e
+source "$(dirname "$0")/build.conf"
 
-ROOTFS="work/rootfs"
+echo "[CH4RCH] Installing s6 service sources..."
 
-mkdir -p "$ROOTFS/etc/s6-linux-init"
-mkdir -p "$ROOTFS/run/service"
-mkdir -p "$ROOTFS/sbin"
+mkdir -p "$CH4RCH_ROOTFS/etc/s6-rc/source"
+cp -r "$CH4RCH_SRC/packages/core/ch4rch-s6-init/service-source/." \
+      "$CH4RCH_ROOTFS/etc/s6-rc/source/"
 
-echo "[1] correct init link"
-ln -sf /usr/bin/s6-linux-init-init "$ROOTFS/sbin/init"
+mkdir -p "$CH4RCH_ROOTFS/etc/s6-rc/compiled"
 
-echo "[2] create service directory"
-mkdir -p "$ROOTFS/run/service"
+chroot "$CH4RCH_ROOTFS" /usr/bin/s6-rc-compile \
+    /etc/s6-rc/compiled \
+    /etc/s6-rc/source
 
-echo "[3] stage1 = svscan launcher"
-cat > "$ROOTFS/etc/s6-linux-init/init-stage1" << 'EOF'
-#!/bin/sh
-exec s6-svscan /run/service
-EOF
+mkdir -p "$CH4RCH_ROOTFS/etc/s6-linux-init"
 
-chmod +x "$ROOTFS/etc/s6-linux-init/init-stage1"
+chroot "$CH4RCH_ROOTFS" /usr/bin/s6-linux-init-maker \
+    -c /etc/s6-linux-init/current \
+    /run/service
 
-echo "[DONE]"
+ln -sf /etc/s6-linux-init/current/bin/init "$CH4RCH_ROOTFS/sbin/init"
+
+echo "[CH4RCH] s6 canonical init generated."

@@ -1,0 +1,9 @@
+NAME="CH4rch Linux"
+PRETTY_NAME="CH4rch Linux"
+ID=ch4rch
+BUILD_ID=rolling
+ANSI_COLOR="1;31"
+HOME_URL="https://ch4rch.local"
+SUPPORT_URL="https://ch4rch.local"
+BUG_REPORT_URL="https://ch4rch.local"
+LOGO=ch4rch

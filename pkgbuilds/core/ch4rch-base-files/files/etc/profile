@@ -1,0 +1,5 @@
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/bin
+export LANG=C
+export EDITOR=vi
+
+umask 022

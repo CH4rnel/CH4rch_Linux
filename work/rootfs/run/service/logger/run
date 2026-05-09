@@ -1,2 +1,0 @@
-#!/usr/bin/execlineb -P
-/usr/bin/s6-log t /var/log/system

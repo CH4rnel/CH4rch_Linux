@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+SRC=/etc/s6-rc/source
+DST=/etc/s6-rc/compiled
+
+rm -rf "$DST"
+
+s6-rc-compile "$DST" "$SRC"

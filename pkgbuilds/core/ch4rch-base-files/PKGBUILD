@@ -1,0 +1,31 @@
+pkgname=ch4rch-base-files
+pkgver=1.0
+pkgrel=1
+pkgdesc="CH4rch Linux base filesystem"
+arch=('x86_64')
+license=('GPL')
+depends=('filesystem' 'bash')
+
+package() {
+
+    install -dm755 "${pkgdir}"
+
+    cp -a "${startdir}/files/." "${pkgdir}/"
+
+    chmod 644 "${pkgdir}/etc/os-release"
+    chmod 644 "${pkgdir}/etc/hostname"
+    chmod 644 "${pkgdir}/etc/issue"
+    chmod 644 "${pkgdir}/etc/motd"
+
+    chmod 644 "${pkgdir}/etc/passwd"
+    chmod 644 "${pkgdir}/etc/group"
+    chmod 600 "${pkgdir}/etc/shadow"
+
+    chmod 644 "${pkgdir}/etc/shells"
+    chmod 644 "${pkgdir}/etc/fstab"
+    chmod 644 "${pkgdir}/etc/profile"
+
+    chmod 700 "${pkgdir}/root"
+
+    chmod 1777 "${pkgdir}/tmp"
+}

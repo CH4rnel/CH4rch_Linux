@@ -1,0 +1,23 @@
+pkgname=ch4rch-s6-init
+pkgver=1.0
+pkgrel=1
+pkgdesc="CH4rch Linux s6 init system"
+arch=('x86_64')
+
+depends=(
+    's6'
+    'util-linux'
+)
+
+package() {
+
+    install -dm755 "${pkgdir}"
+
+    cp -a "${startdir}/files/." "${pkgdir}/"
+
+    chmod +x "${pkgdir}/sbin/init"
+
+    find "${pkgdir}/etc/s6-rc/source" \
+        -name run \
+        -exec chmod +x {} \;
+}
