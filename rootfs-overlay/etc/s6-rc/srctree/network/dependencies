@@ -1,0 +1,3 @@
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Network depends on basic system initialization.
+s6rc-oneshot-runner
