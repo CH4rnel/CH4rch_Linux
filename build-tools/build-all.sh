@@ -1,4 +1,8 @@
 #!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Main build orchestrator for CH4rch Linux.
+# Executes the build pipeline in strict order: packages -> sign -> repo -> rootfs -> init -> iso.
+
 set -e
 
 source "$(dirname "$0")/build.conf"
@@ -8,18 +12,12 @@ log() {
 }
 
 prepare_workspace() {
-
     log "Preparing workspace..."
-
-    mkdir -p "$CH4RCH_WORK"
-    mkdir -p "$CH4RCH_PKGDEST"
-    mkdir -p "$CH4RCH_SRCDEST"
-    mkdir -p "$CH4RCH_REPO/$CH4RCH_ARCH"
-    mkdir -p "$CH4RCH_LOGS"
-    mkdir -p "$CH4RCH_ISO"
-
+    mkdir -p "$CH4RCH_WORK" "$CH4RCH_PKGDEST" "$CH4RCH_SRCDEST" \
+             "$CH4RCH_REPO/$CH4RCH_ARCH" "$CH4RCH_LOGS" "$CH4RCH_ISO"
+    
+    # Clean previous rootfs to ensure a reproducible build
     rm -rf "$CH4RCH_ROOTFS"
-
     mkdir -p "$CH4RCH_ROOTFS"
 }
 
@@ -43,4 +41,4 @@ log "Compiling init..."
 log "Building ISO..."
 "$CH4RCH_SRC/build-tools/build-iso.sh"
 
-log "Build completed."
+log "Build completed successfully."
