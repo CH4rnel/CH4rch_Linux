@@ -1,0 +1,3 @@
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Getty depends on basic filesystem being mounted.
+s6rc-oneshot-runner
