@@ -1,5 +1,6 @@
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # Base bundle: critical services that must be running after boot.
 s6rc-oneshot-runner
+logger
 getty
 network
