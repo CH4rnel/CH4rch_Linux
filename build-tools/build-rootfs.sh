@@ -1,4 +1,7 @@
 #!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Builds the minimal rootfs with strict package signature verification.
+
 set -e
 
 source "$(dirname "$0")/build.conf"
@@ -12,10 +15,13 @@ cat > "$CH4RCH_ROOTFS/etc/pacman.conf" << EOF
 [options]
 Architecture = auto
 CheckSpace
-SigLevel = Optional TrustAll
-LocalFileSigLevel = Optional
+# Enforce signature verification for all repositories
+SigLevel = Required DatabaseOptional
+LocalFileSigLevel = Required
 
 [$CH4RCH_REPO_NAME]
+# Explicitly require signatures for CH4rch packages
+SigLevel = Required
 Server = file://$CH4RCH_REPO/\$arch
 EOF
 
@@ -25,8 +31,6 @@ pacman -Sy \
     --root "$CH4RCH_ROOTFS" \
     --dbpath "$CH4RCH_ROOTFS/var/lib/pacman" \
     --cachedir "$CH4RCH_ROOTFS/var/cache/pacman/pkg" \
-    ch4rch-base-files \
-    ch4rch-s6-init \
     bash \
     glibc \
     linux \
@@ -34,4 +38,5 @@ pacman -Sy \
     s6 \
     s6-rc \
     s6-linux-init \
-    util-linux
+    util-linux \
+    dhcpcd
