@@ -1,0 +1,4 @@
+#!/bin/execlineb -P
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Minimal oneshot runner for s6-rc base bundle initialization.
+foreground { echo "CH4rch Linux: s6-rc base bundle initialized." }
