@@ -5,17 +5,20 @@
 set -e
 source "$(dirname "$0")/build.conf"
 
-echo "[CH4RCH] Installing s6 service sources..."
+echo "[CH4RCH] Installing s6 service sources from overlay..."
 
-# Ensure source directory exists in rootfs
+# Ensure target directories exist in rootfs
 mkdir -p "$CH4RCH_ROOTFS/etc/s6-rc/source"
-
-if [ -d "$CH4RCH_SRC/packages/core/ch4rch-s6-init/service-source" ]; then
-    cp -r "$CH4RCH_SRC/packages/core/ch4rch-s6-init/service-source/." \
-          "$CH4RCH_ROOTFS/etc/s6-rc/source/"
-fi
-
 mkdir -p "$CH4RCH_ROOTFS/etc/s6-rc/compiled"
+
+# This ensures custom services (getty, network, base bundle) are present
+# before compilation, supplementing or overriding any installed packages.
+if [ -d "$CH4RCH_SRC/rootfs-overlay/etc/s6-rc/source" ]; then
+    cp -r "$CH4RCH_SRC/rootfs-overlay/etc/s6-rc/source/." "$CH4RCH_ROOTFS/etc/s6-rc/source/"
+    echo "[CH4RCH] Overlay services copied successfully."
+else
+    echo "[CH4RCH] WARNING: No s6-rc source overlay found at rootfs-overlay/etc/s6-rc/source"
+fi
 
 echo "[CH4RCH] Compiling s6-rc database..."
 arch-chroot "$CH4RCH_ROOTFS" /usr/bin/s6-rc-compile \
