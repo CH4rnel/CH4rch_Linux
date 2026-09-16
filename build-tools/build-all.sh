@@ -1,7 +1,7 @@
 #!/bin/bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # Main build orchestrator for CH4rch Linux.
-# Executes the build pipeline in strict order: packages -> sign -> repo -> rootfs -> init -> iso.
+# Executes the build pipeline in strict order: packages -> sign -> repo -> rootfs -> init -> iso -> snapshot.
 
 set -e
 
@@ -40,5 +40,15 @@ log "Compiling init..."
 
 log "Building ISO..."
 "$CH4RCH_SRC/build-tools/build-iso.sh"
+
+# Create snapshot after successful build
+log "Creating build snapshot..."
+if [ -x "$CH4RCH_SRC/build-tools/snapshot.sh" ]; then
+    "$CH4RCH_SRC/build-tools/snapshot.sh" create "build-$(cat "$CH4RCH_SRC/VERSION")-$TIMESTAMP" 2>/dev/null || {
+        log "WARNING: Snapshot creation failed, but build completed."
+    }
+else
+    log "WARNING: snapshot.sh not found, skipping snapshot creation."
+fi
 
 log "Build completed successfully."
