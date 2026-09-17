@@ -15,7 +15,7 @@
 - [ ] Phase 9: PQC Rollout, Stage 2
 - [x] Phase 10: Application-level Event Bus (s6-notifications + Unix-socket JSON) (s6-notifications + Unix-socket JSON)
 - [x] Phase 11: Knowledge Graph v1 (SQLite-based metadata storage)
-- [ ] Phase 12: Adaptive System
+- [x] Phase 12: Adaptive System (telemetry + threshold-based reactions)
 - [ ] Phase 13: AI Supervision Platform Infrastructure (Agent Profiles, isolation backends, one-click UX)
 - [ ] Phase 14: Agent Capability Catalog - Read-only (system.audit.read, cache.clean, network.scan.local report-only)
 
