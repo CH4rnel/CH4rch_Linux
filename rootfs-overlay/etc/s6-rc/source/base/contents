@@ -5,3 +5,4 @@ getty
 network
 logger
 event-bus
+adaptive-monitor

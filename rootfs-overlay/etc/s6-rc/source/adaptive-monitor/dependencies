@@ -1,0 +1,4 @@
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Adaptive monitor depends on event-bus and logger.
+event-bus
+logger
