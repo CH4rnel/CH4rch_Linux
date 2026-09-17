@@ -13,7 +13,7 @@
 
 ## TIER: EXTENDED
 - [ ] Phase 9: PQC Rollout, Stage 2
-- [ ] Phase 10: Application-level Event Bus (s6-notifications + Unix-socket JSON)
+- [x] Phase 10: Application-level Event Bus (s6-notifications + Unix-socket JSON) (s6-notifications + Unix-socket JSON)
 - [ ] Phase 11: Knowledge Graph v1
 - [ ] Phase 12: Adaptive System
 - [ ] Phase 13: AI Supervision Platform Infrastructure (Agent Profiles, isolation backends, one-click UX)
