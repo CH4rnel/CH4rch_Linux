@@ -41,3 +41,4 @@ pacman -Sy \
     util-linux \
     dhcpcd
     bubblewrap
+    sqlite
