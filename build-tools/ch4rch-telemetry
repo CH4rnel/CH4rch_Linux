@@ -1,0 +1,150 @@
+#!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Telemetry utility for CH4rch Linux.
+# Collects system metrics (CPU, memory, disk, services) for adaptive system.
+
+set -e
+
+source "$(dirname "$0")/build.conf"
+
+METRICS_DIR="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/metrics"
+mkdir -p "$METRICS_DIR"
+
+collect_cpu() {
+    # Read CPU usage from /proc/stat
+    if [ -f /proc/stat ]; then
+        local cpu_line=$(head -1 /proc/stat)
+        echo "$cpu_line" | awk '{printf "%.2f", ($2+$4)*100/($2+$4+$5)}'
+    else
+        echo "0.00"
+    fi
+}
+
+collect_memory() {
+    # Read memory usage from /proc/meminfo
+    if [ -f /proc/meminfo ]; then
+        local total=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+        local available=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+        if [ -n "$total" ] && [ -n "$available" ] && [ "$total" -gt 0 ]; then
+            echo "scale=2; (($total - $available) * 100) / $total" | bc 2>/dev/null || echo "0.00"
+        else
+            echo "0.00"
+        fi
+    else
+        echo "0.00"
+    fi
+}
+
+collect_disk() {
+    # Read root filesystem usage
+    df -h / 2>/dev/null | awk 'NR==2 {print $5}' | tr -d '%' || echo "0"
+}
+
+collect_services() {
+    # Check s6-rc services status (simplified)
+    local up_count=0
+    local down_count=0
+    
+    if [ -d /run/service ]; then
+        for svc in /run/service/*; do
+            [ -d "$svc" ] || continue
+            if [ -f "$svc"/supervise/status ] || pgrep -f "$(basename "$svc")" > /dev/null 2>&1; then
+                ((up_count++))
+            else
+                ((down_count++))
+            fi
+        done
+    fi
+    
+    echo "{\"up\":$up_count,\"down\":$down_count}"
+}
+
+collect() {
+    local metric_type="${1:-all}"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local metrics_file="$METRICS_DIR/metrics_$(date +%s%N).json"
+    
+    case "$metric_type" in
+        cpu)
+            local value=$(collect_cpu)
+            echo "{\"metric\":\"cpu\",\"value\":$value,\"timestamp\":\"$timestamp\"}"
+            ;;
+        memory)
+            local value=$(collect_memory)
+            echo "{\"metric\":\"memory\",\"value\":$value,\"timestamp\":\"$timestamp\"}"
+            ;;
+        disk)
+            local value=$(collect_disk)
+            echo "{\"metric\":\"disk\",\"value\":$value,\"timestamp\":\"$timestamp\"}"
+            ;;
+        services)
+            local value=$(collect_services)
+            echo "{\"metric\":\"services\",\"value\":$value,\"timestamp\":\"$timestamp\"}"
+            ;;
+        all)
+            local cpu=$(collect_cpu)
+            local memory=$(collect_memory)
+            local disk=$(collect_disk)
+            local services=$(collect_services)
+            
+            cat > "$metrics_file" << EOF
+{
+  "timestamp": "$timestamp",
+  "metrics": {
+    "cpu": $cpu,
+    "memory": $memory,
+    "disk": $disk,
+    "services": $services
+  }
+}
+EOF
+            echo "[CH4RCH] Metrics collected at $metrics_file"
+            cat "$metrics_file"
+            
+            # Publish to event bus
+            if [ -x "$CH4RCH_SRC/build-tools/ch4rch-events" ]; then
+                "$CH4RCH_SRC/build-tools/ch4rch-events" publish "telemetry" "{\"cpu\":$cpu,\"memory\":$memory,\"disk\":$disk}" > /dev/null 2>&1 || true
+            fi
+            
+            # Add to knowledge graph
+            if [ -x "$CH4RCH_SRC/build-tools/knowledge-graph" ]; then
+                "$CH4RCH_SRC/build-tools/knowledge-graph" add-node "metrics_$(date +%s)" "telemetry" "{\"cpu\":$cpu,\"memory\":$memory}" > /dev/null 2>&1 || true
+            fi
+            
+            # Log to hash-chain
+            if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+                "$CH4RCH_SRC/build-tools/hash-chain.sh" "TELEMETRY_COLLECT cpu=$cpu memory=$memory disk=$disk"
+            fi
+            ;;
+        *)
+            echo "Usage: $0 collect {cpu|memory|disk|services|all}"
+            exit 1
+            ;;
+    esac
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    collect)
+        shift
+        collect "${1:-all}"
+        ;;
+    cpu)
+        collect cpu
+        ;;
+    memory)
+        collect memory
+        ;;
+    disk)
+        collect disk
+        ;;
+    services)
+        collect services
+        ;;
+    *)
+        echo "Usage: $0 {collect|cpu|memory|disk|services} [type]"
+        echo "  collect [cpu|memory|disk|services|all] - Collect metrics"
+        echo "  cpu|memory|disk|services               - Quick metric read"
+        exit 1
+        ;;
+esac
