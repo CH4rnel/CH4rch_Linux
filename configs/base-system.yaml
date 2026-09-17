@@ -1,0 +1,14 @@
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Base system configuration for CH4rch Linux.
+
+system:
+  hostname: ch4rch-linux
+  timezone: UTC
+  locale: en_US.UTF-8
+
+packages:
+  - bash
+  - coreutils
+  - s6
+  - s6-rc
+  - s6-linux-init
