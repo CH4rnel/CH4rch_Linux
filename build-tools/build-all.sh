@@ -1,7 +1,7 @@
 #!/bin/bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # Main build orchestrator for CH4rch Linux.
-# Executes the build pipeline in strict order: packages -> sign -> repo -> rootfs -> init -> iso -> snapshot.
+# Executes the build pipeline in strict order: packages -> sign -> repo -> rootfs -> init -> config -> iso -> snapshot.
 
 set -e
 
@@ -38,13 +38,23 @@ log "Building rootfs..."
 log "Compiling init..."
 "$CH4RCH_SRC/build-tools/bootstrap-init.sh"
 
+# Apply declarative configuration
+log "Applying declarative configuration..."
+if [ -x "$CH4RCH_SRC/build-tools/ch4rchctl" ]; then
+    "$CH4RCH_SRC/build-tools/ch4rchctl" apply || {
+        log "WARNING: Configuration apply failed, but build continued."
+    }
+else
+    log "WARNING: ch4rchctl not found, skipping configuration apply."
+fi
+
 log "Building ISO..."
 "$CH4RCH_SRC/build-tools/build-iso.sh"
 
 # Create snapshot after successful build
 log "Creating build snapshot..."
 if [ -x "$CH4RCH_SRC/build-tools/snapshot.sh" ]; then
-    "$CH4RCH_SRC/build-tools/snapshot.sh" create "build-$(cat "$CH4RCH_SRC/VERSION")-$TIMESTAMP" 2>/dev/null || {
+    "$CH4RCH_SRC/build-tools/snapshot.sh" create "build-$(cat "$CH4RCH_SRC/VERSION")-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || {
         log "WARNING: Snapshot creation failed, but build completed."
     }
 else
