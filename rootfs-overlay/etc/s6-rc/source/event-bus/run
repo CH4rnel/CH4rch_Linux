@@ -1,0 +1,16 @@
+#!/bin/execlineb -P
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Event bus daemon: monitors events directory and dispatches to subscribers.
+
+foreground { mkdir -p /run/ch4rch/events }
+foreground { echo "CH4rch Linux: Event bus daemon started." }
+
+# Simple loop: check for new events and log them
+while true; do
+    for event in /run/ch4rch/events/*.json; do
+        [ -f "$event" ] || continue
+        echo "[EVENT] $(cat "$event")"
+        rm -f "$event"
+    done
+    sleep 1
+done

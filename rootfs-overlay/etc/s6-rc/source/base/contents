@@ -4,3 +4,4 @@ s6rc-oneshot-runner
 getty
 network
 logger
+event-bus

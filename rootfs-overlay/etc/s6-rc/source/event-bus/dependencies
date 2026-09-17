@@ -1,0 +1,3 @@
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Event bus depends on logger for log directory initialization.
+logger
