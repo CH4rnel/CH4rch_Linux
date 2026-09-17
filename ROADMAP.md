@@ -7,7 +7,7 @@
 - [ ] Phase 3: Package Trust MVP (Hash-chain verification)
 - [ ] Phase 4: Service Graph Engineering (s6-rc DAG)
 - [ ] Phase 5: Rollback Mechanism (Btrfs snapshots integration)
-- [ ] Phase 6: Declarative Configuration MVP (plan/apply over pacman)
+- [x] Phase 6: Declarative Configuration MVP (plan/apply over pacman)
 - [ ] Phase 7: Process Isolation MVP (bubblewrap/Podman basics)
 - [ ] Phase 8: Release Engineering (CI/CD, ISO generation)
 
