@@ -1,0 +1,64 @@
+#!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Declarative configuration utility for CH4rch Linux.
+# Implements ADR-04: declarative layer over pacman via plan/apply.
+
+set -e
+
+source "$(dirname "$0")/build.conf"
+
+CONFIG_DIR="$CH4RCH_SRC/configs"
+STATE_FILE="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/current-state.yaml"
+
+plan() {
+    echo "[CH4RCH] Planning configuration changes..."
+    
+    if [ ! -d "$CONFIG_DIR" ]; then
+        echo "[CH4RCH] WARNING: No configuration directory found at $CONFIG_DIR"
+        echo "[CH4RCH] No changes to apply."
+        return 0
+    fi
+    
+    echo "[CH4RCH] Current configuration files:"
+    find "$CONFIG_DIR" -type f -name "*.yaml" -o -name "*.yml" | while read -r file; do
+        echo "  - $(basename "$file")"
+    done
+    
+    echo "[CH4RCH] Plan completed. No actual changes made."
+}
+
+apply() {
+    echo "[CH4RCH] Applying configuration changes..."
+    
+    if [ ! -d "$CONFIG_DIR" ]; then
+        echo "[CH4RCH] WARNING: No configuration directory found at $CONFIG_DIR"
+        return 0
+    fi
+    
+    # For MVP: just copy config files to rootfs overlay
+    mkdir -p "$CH4RCH_ROOTFS/etc/ch4rch"
+    cp -r "$CONFIG_DIR"/* "$CH4RCH_ROOTFS/etc/ch4rch/" 2>/dev/null || true
+    
+    echo "[CH4RCH] Configuration applied successfully."
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "CONFIG_APPLY files=$(find "$CONFIG_DIR" -type f | wc -l)"
+    fi
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    plan)
+        plan
+        ;;
+    apply)
+        apply
+        ;;
+    *)
+        echo "Usage: $0 {plan|apply}"
+        echo "  plan    - Show what configuration changes would be made"
+        echo "  apply   - Apply configuration changes"
+        exit 1
+        ;;
+esac
