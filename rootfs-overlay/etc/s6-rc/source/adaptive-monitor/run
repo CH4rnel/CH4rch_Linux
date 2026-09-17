@@ -1,0 +1,16 @@
+#!/bin/execlineb -P
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Adaptive monitor daemon: periodically collects telemetry and analyzes it.
+
+foreground { echo "CH4rch Linux: Adaptive monitor started." }
+
+# Simple loop: collect metrics every 60 seconds
+while true; do
+    if [ -x /usr/bin/ch4rch-telemetry ]; then
+        /usr/bin/ch4rch-telemetry collect all > /dev/null 2>&1
+    fi
+    if [ -x /usr/bin/ch4rch-adaptive ]; then
+        /usr/bin/ch4rch-adaptive check > /dev/null 2>&1
+    fi
+    sleep 60
+done
