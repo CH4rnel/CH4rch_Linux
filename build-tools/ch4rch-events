@@ -1,0 +1,108 @@
+#!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Application-level Event Bus for CH4rch Linux.
+# Implements ADR-07: event-driven architecture via Unix-socket JSON.
+
+set -e
+
+source "$(dirname "$0")/build.conf"
+
+SOCKET_PATH="/run/ch4rch/events.sock"
+EVENTS_DIR="/run/ch4rch/events"
+
+# Ensure directories exist
+mkdir -p "$(dirname "$SOCKET_PATH")"
+mkdir -p "$EVENTS_DIR"
+
+publish() {
+    local topic="$1"
+    local message="$2"
+    
+    if [ -z "$topic" ] || [ -z "$message" ]; then
+        echo "Usage: $0 publish <topic> <message>"
+        exit 1
+    fi
+    
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local event_file="$EVENTS_DIR/${topic}_$(date +%s%N).json"
+    
+    # Create JSON event
+    cat > "$event_file" << EOF
+{
+  "topic": "$topic",
+  "message": "$message",
+  "timestamp": "$timestamp"
+}
+EOF
+    
+    echo "[CH4RCH] Event published: topic=$topic"
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "EVENT_PUBLISH topic=$topic"
+    fi
+}
+
+subscribe() {
+    local topic="$1"
+    
+    if [ -z "$topic" ]; then
+        echo "Usage: $0 subscribe <topic>"
+        exit 1
+    fi
+    
+    echo "[CH4RCH] Subscribing to topic: $topic (Ctrl+C to exit)"
+    
+    # Simple implementation: tail the events directory for matching topic
+    # In production, this would use inotify or Unix-socket
+    while true; do
+        for event_file in "$EVENTS_DIR"/${topic}_*.json; do
+            [ -f "$event_file" ] || continue
+            cat "$event_file"
+            rm -f "$event_file"
+        done
+        sleep 1
+    done
+}
+
+list() {
+    echo "[CH4RCH] Active event topics:"
+    
+    if [ ! -d "$EVENTS_DIR" ]; then
+        echo "No events directory found."
+        return 0
+    fi
+    
+    # Extract unique topics from event files
+    find "$EVENTS_DIR" -name "*.json" -exec basename {} \; | \
+        sed 's/_[0-9]*\.json$//' | \
+        sort -u | \
+        while read -r topic; do
+            echo "  - $topic"
+        done
+    
+    local count=$(find "$EVENTS_DIR" -name "*.json" 2>/dev/null | wc -l)
+    echo "Total pending events: $count"
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    publish)
+        shift
+        publish "${1:-}" "${2:-}"
+        ;;
+    subscribe)
+        shift
+        subscribe "${1:-}"
+        ;;
+    list)
+        list
+        ;;
+    *)
+        echo "Usage: $0 {publish|subscribe|list} [args]"
+        echo "  publish <topic> <message>  - Publish an event"
+        echo "  subscribe <topic>          - Subscribe to events on topic"
+        echo "  list                       - List active topics"
+        exit 1
+        ;;
+esac
