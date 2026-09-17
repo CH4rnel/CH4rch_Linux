@@ -1,0 +1,194 @@
+#!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Knowledge Graph v1 for CH4rch Linux.
+# Implements ADR-08: SQLite-based storage for packages, configs, dependencies, events.
+
+set -e
+
+source "$(dirname "$0")/build.conf"
+
+DB_PATH="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/knowledge-graph.db"
+
+# Initialize database schema
+init_db() {
+    if [ ! -f "$DB_PATH" ]; then
+        mkdir -p "$(dirname "$DB_PATH")"
+        sqlite3 "$DB_PATH" <<'EOF'
+CREATE TABLE IF NOT EXISTS nodes (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    data TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    relation TEXT NOT NULL,
+    data TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (source_id) REFERENCES nodes(id),
+    FOREIGN KEY (target_id) REFERENCES nodes(id),
+    UNIQUE(source_id, target_id, relation)
+);
+
+CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
+CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
+CREATE INDEX IF NOT EXISTS idx_edges_relation ON edges(relation);
+EOF
+        echo "[CH4RCH] Knowledge graph database initialized at $DB_PATH"
+    fi
+}
+
+add_node() {
+    local id="$1"
+    local type="$2"
+    local data="${3:-}"
+    
+    if [ -z "$id" ] || [ -z "$type" ]; then
+        echo "Usage: $0 add-node <id> <type> [data]"
+        exit 1
+    fi
+    
+    init_db
+    
+    sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO nodes (id, type, data) VALUES ('$id', '$type', '$data');"
+    echo "[CH4RCH] Node added: id=$id type=$type"
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "KG_ADD_NODE id=$id type=$type"
+    fi
+    
+    # Publish event
+    if [ -x "$CH4RCH_SRC/build-tools/ch4rch-events" ]; then
+        "$CH4RCH_SRC/build-tools/ch4rch-events" publish "knowledge-graph" "{\"action\":\"add-node\",\"id\":\"$id\",\"type\":\"$type\"}" > /dev/null 2>&1 || true
+    fi
+}
+
+add_edge() {
+    local source_id="$1"
+    local target_id="$2"
+    local relation="$3"
+    local data="${4:-}"
+    
+    if [ -z "$source_id" ] || [ -z "$target_id" ] || [ -z "$relation" ]; then
+        echo "Usage: $0 add-edge <source_id> <target_id> <relation> [data]"
+        exit 1
+    fi
+    
+    init_db
+    
+    sqlite3 "$DB_PATH" "INSERT OR IGNORE INTO edges (source_id, target_id, relation, data) VALUES ('$source_id', '$target_id', '$relation', '$data');"
+    echo "[CH4RCH] Edge added: $source_id --[$relation]--> $target_id"
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "KG_ADD_EDGE source=$source_id target=$target_id relation=$relation"
+    fi
+    
+    # Publish event
+    if [ -x "$CH4RCH_SRC/build-tools/ch4rch-events" ]; then
+        "$CH4RCH_SRC/build-tools/ch4rch-events" publish "knowledge-graph" "{\"action\":\"add-edge\",\"source\":\"$source_id\",\"target\":\"$target_id\",\"relation\":\"$relation\"}" > /dev/null 2>&1 || true
+    fi
+}
+
+query() {
+    local query_type="$1"
+    local param="$2"
+    
+    init_db
+    
+    case "$query_type" in
+        node)
+            if [ -z "$param" ]; then
+                echo "Usage: $0 query node <id>"
+                exit 1
+            fi
+            sqlite3 -header -column "$DB_PATH" "SELECT * FROM nodes WHERE id='$param';"
+            ;;
+        edges-from)
+            if [ -z "$param" ]; then
+                echo "Usage: $0 query edges-from <source_id>"
+                exit 1
+            fi
+            sqlite3 -header -column "$DB_PATH" "SELECT * FROM edges WHERE source_id='$param';"
+            ;;
+        edges-to)
+            if [ -z "$param" ]; then
+                echo "Usage: $0 query edges-to <target_id>"
+                exit 1
+            fi
+            sqlite3 -header -column "$DB_PATH" "SELECT * FROM edges WHERE target_id='$param';"
+            ;;
+        all-nodes)
+            sqlite3 -header -column "$DB_PATH" "SELECT * FROM nodes;"
+            ;;
+        all-edges)
+            sqlite3 -header -column "$DB_PATH" "SELECT * FROM edges;"
+            ;;
+        *)
+            echo "Usage: $0 query {node|edges-from|edges-to|all-nodes|all-edges} [param]"
+            exit 1
+            ;;
+    esac
+}
+
+export() {
+    local format="${1:-json}"
+    
+    init_db
+    
+    case "$format" in
+        json)
+            echo "{"
+            echo "  \"nodes\": ["
+            sqlite3 -json "$DB_PATH" "SELECT * FROM nodes;" | sed 's/^/    /'
+            echo "  ],"
+            echo "  \"edges\": ["
+            sqlite3 -json "$DB_PATH" "SELECT * FROM edges;" | sed 's/^/    /'
+            echo "  ]"
+            echo "}"
+            ;;
+        csv)
+            echo "NODES:"
+            sqlite3 -header -csv "$DB_PATH" "SELECT * FROM nodes;"
+            echo ""
+            echo "EDGES:"
+            sqlite3 -header -csv "$DB_PATH" "SELECT * FROM edges;"
+            ;;
+        *)
+            echo "Usage: $0 export {json|csv}"
+            exit 1
+            ;;
+    esac
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    add-node)
+        shift
+        add_node "${1:-}" "${2:-}" "${3:-}"
+        ;;
+    add-edge)
+        shift
+        add_edge "${1:-}" "${2:-}" "${3:-}" "${4:-}"
+        ;;
+    query)
+        shift
+        query "${1:-}" "${2:-}"
+        ;;
+    export)
+        shift
+        export "${1:-}"
+        ;;
+    *)
+        echo "Usage: $0 {add-node|add-edge|query|export} [args]"
+        echo "  add-node <id> <type> [data]                    - Add a node"
+        echo "  add-edge <source> <target> <relation> [data]   - Add an edge"
+        echo "  query {node|edges-from|edges-to|all-nodes|all-edges} [param] - Query graph"
+        echo "  export {json|csv}                              - Export graph"
+        exit 1
+        ;;
+esac
