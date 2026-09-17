@@ -1,0 +1,145 @@
+#!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Agent Capability Catalog - Read-only operations for CH4rch Linux.
+# Implements Phase 14: system.audit.read, cache.inspect, network.scan.local (report-only).
+
+set -e
+
+source "$(dirname "$0")/build.conf"
+
+# Check if AI platform is enabled
+check_ai_enabled() {
+    local state_file="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/ai-platform.state"
+    local state=$(cat "$state_file" 2>/dev/null || echo "DISABLED")
+    
+    if [ "$state" != "ENABLED" ]; then
+        echo "[CH4RCH] ERROR: AI Platform is DISABLED. Cannot execute agent capability."
+        echo "[CH4RCH] Run 'ch4rch-ai enable' first."
+        exit 1
+    fi
+}
+
+audit_system() {
+    check_ai_enabled
+    
+    echo "[CH4RCH] Executing system.audit.read capability..."
+    echo "=========================================="
+    
+    # System information (read-only)
+    echo "## System Information"
+    echo "Hostname: $(hostname 2>/dev/null || echo 'unknown')"
+    echo "Kernel: $(uname -r 2>/dev/null || echo 'unknown')"
+    echo "Uptime: $(uptime -p 2>/dev/null || echo 'unknown')"
+    echo ""
+    
+    # Installed packages count
+    echo "## Package Statistics"
+    if command -v pacman &> /dev/null; then
+        local pkg_count=$(pacman -Q 2>/dev/null | wc -l || echo "0")
+        echo "Installed packages: $pkg_count"
+    else
+        echo "Package manager not available"
+    fi
+    echo ""
+    
+    # s6-rc services status
+    echo "## Service Status"
+    if [ -d /run/service ]; then
+        local svc_count=$(ls -1 /run/service 2>/dev/null | wc -l || echo "0")
+        echo "Active services: $svc_count"
+    else
+        echo "Service directory not found"
+    fi
+    echo ""
+    
+    # Disk usage summary
+    echo "## Disk Usage"
+    df -h / 2>/dev/null | awk 'NR==2 {printf "Root filesystem: %s used of %s (%s)\n", $3, $2, $5}' || echo "Disk info unavailable"
+    echo "=========================================="
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "AGENT_CAPABILITY action=system.audit.read"
+    fi
+    
+    # Publish event
+    if [ -x "$CH4RCH_SRC/build-tools/ch4rch-events" ]; then
+        "$CH4RCH_SRC/build-tools/ch4rch-events" publish "agent-capability" "{\"action\":\"system.audit.read\"}" > /dev/null 2>&1 || true
+    fi
+}
+
+inspect_cache() {
+    check_ai_enabled
+    
+    echo "[CH4RCH] Executing cache.inspect capability..."
+    echo "=========================================="
+    
+    # Pacman cache inspection (read-only)
+    if command -v pacman &> /dev/null; then
+        local cache_dir="/var/cache/pacman/pkg"
+        if [ -d "$cache_dir" ]; then
+            local cache_size=$(du -sh "$cache_dir" 2>/dev/null | cut -f1 || echo "0")
+            local pkg_count=$(ls -1 "$cache_dir"/*.pkg.tar.* 2>/dev/null | wc -l || echo "0")
+            echo "Pacman cache size: $cache_size"
+            echo "Cached packages: $pkg_count"
+        else
+            echo "Cache directory not found"
+        fi
+    else
+        echo "Package manager not available"
+    fi
+    echo "=========================================="
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "AGENT_CAPABILITY action=cache.inspect"
+    fi
+}
+
+scan_local_network() {
+    check_ai_enabled
+    
+    echo "[CH4RCH] Executing network.scan.local capability (report-only)..."
+    echo "=========================================="
+    
+    # Local network scan (read-only, report-only)
+    echo "## Local Network Interfaces"
+    ip addr show 2>/dev/null | grep -E "^[0-9]+:|inet " || echo "Network info unavailable"
+    echo ""
+    
+    echo "## Default Route"
+    ip route show default 2>/dev/null || echo "Route info unavailable"
+    echo ""
+    
+    echo "## Active Connections (ESTABLISHED)"
+    ss -tunap 2>/dev/null | grep ESTAB | head -10 || echo "Connection info unavailable"
+    echo "=========================================="
+    echo "[CH4RCH] NOTE: This is a read-only report. No network scanning performed."
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "AGENT_CAPABILITY action=network.scan.local mode=report-only"
+    fi
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    audit)
+        audit_system
+        ;;
+    inspect-cache)
+        inspect_cache
+        ;;
+    scan-local)
+        scan_local_network
+        ;;
+    *)
+        echo "Usage: $0 {audit|inspect-cache|scan-local}"
+        echo "  audit          - Read system information (system.audit.read)"
+        echo "  inspect-cache  - Inspect package cache (cache.inspect)"
+        echo "  scan-local     - Report local network status (network.scan.local)"
+        echo ""
+        echo "All operations are read-only and require AI Platform to be ENABLED."
+        exit 1
+        ;;
+esac
