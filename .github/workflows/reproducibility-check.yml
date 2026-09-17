@@ -19,29 +19,26 @@ jobs:
       - name: Verify required documentation exists
         run: |
           echo "Checking mandatory v3.0 documentation files..."
-          
-          if [ ! -f "VERSION" ]; then
-            echo "ERROR: VERSION file missing"
-            exit 1
-          fi
-          
-          if [ ! -f "DOGMATICS.md" ]; then
-            echo "ERROR: DOGMATICS.md missing"
-            exit 1
-          fi
-          
-          if [ ! -f "ROADMAP.md" ]; then
-            echo "ERROR: ROADMAP.md missing"
-            exit 1
-          fi
-          
-          if [ ! -d "docs/adr" ]; then
-            echo "ERROR: docs/adr directory missing"
-            exit 1
-          fi
-          
+          if [ ! -f "VERSION" ]; then echo "ERROR: VERSION file missing" && exit 1; fi
+          if [ ! -f "DOGMATICS.md" ]; then echo "ERROR: DOGMATICS.md missing" && exit 1; fi
+          if [ ! -f "ROADMAP.md" ]; then echo "ERROR: ROADMAP.md missing" && exit 1; fi
+          if [ ! -d "docs/adr" ]; then echo "ERROR: docs/adr directory missing" && exit 1; fi
           echo "PASS: All mandatory documentation files are present."
+
+      - name: Install shellcheck (optional but recommended)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run local test suite
+        run: |
+          echo "Running all project tests..."
+          chmod +x tests/*.sh
+          for test in tests/test_*.sh; do
+            echo "Executing $test..."
+            "$test"
+          done
 
       - name: Artifact Backup Reminder
         run: |
-          echo "::warning::CH4rch Linux Policy: Any VM image or build artifact that cannot be rebuilt from this repository in 10 minutes MUST be backed up to external storage (S3/NAS). CI will soon enforce artifact hashing."
+          echo "::warning::CH4rch Linux Policy: Any VM image or build artifact that cannot be rebuilt from this repository in 10 minutes MUST be backed up to external storage (S3/NAS)."
