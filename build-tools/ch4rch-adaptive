@@ -1,0 +1,150 @@
+#!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Adaptive engine for CH4rch Linux.
+# Analyzes telemetry metrics against thresholds and triggers automated reactions.
+
+set -e
+
+source "$(dirname "$0")/build.conf"
+
+CONFIG_FILE="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/adaptive-config.yaml"
+
+# Default thresholds (can be overridden by config file)
+CPU_THRESHOLD=90
+MEMORY_THRESHOLD=85
+DISK_THRESHOLD=95
+
+# Load config if exists
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE" 2>/dev/null || true
+fi
+
+analyze() {
+    local metric_type="$1"
+    local value="$2"
+    local threshold="$3"
+    
+    if [ -z "$metric_type" ] || [ -z "$value" ]; then
+        echo "Usage: $0 analyze <metric_type> <value> [threshold]"
+        exit 1
+    fi
+    
+    threshold="${threshold:-${!metric_type^^}_THRESHOLD}"
+    threshold="${threshold:-90}"
+    
+    local comparison=$(echo "$value > $threshold" | bc 2>/dev/null || echo "0")
+    
+    if [ "$comparison" -eq 1 ]; then
+        echo "[CH4RCH] ALERT: $metric_type=$value exceeds threshold=$threshold"
+        react "$metric_type" "$value" "$threshold"
+    else
+        echo "[CH4RCH] OK: $metric_type=$value within threshold=$threshold"
+    fi
+}
+
+react() {
+    local metric_type="$1"
+    local value="$2"
+    local threshold="$3"
+    
+    echo "[CH4RCH] Triggering reaction for $metric_type..."
+    
+    # Publish alert event
+    if [ -x "$CH4RCH_SRC/build-tools/ch4rch-events" ]; then
+        "$CH4RCH_SRC/build-tools/ch4rch-events" publish "adaptive-alert" \
+            "{\"metric\":\"$metric_type\",\"value\":$value,\"threshold\":$threshold}" > /dev/null 2>&1 || true
+    fi
+    
+    # Execute predefined reaction based on metric type
+    case "$metric_type" in
+        disk)
+            echo "[CH4RCH] Reaction: Cleaning pacman cache..."
+            if [ -x "$CH4RCH_SRC/build-tools/isolate.sh" ]; then
+                # Run cache clean in sandbox for safety
+                "$CH4RCH_SRC/build-tools/isolate.sh" run "pacman -Scc --noconfirm" 2>/dev/null || \
+                    echo "[CH4RCH] Cache clean attempted."
+            fi
+            ;;
+        memory)
+            echo "[CH4RCH] Reaction: Dropping kernel caches..."
+            if [ -w /proc/sys/vm/drop_caches ]; then
+                echo 1 > /proc/sys/vm/drop_caches 2>/dev/null || true
+            else
+                echo "[CH4RCH] Cannot drop caches (requires root)."
+            fi
+            ;;
+        cpu)
+            echo "[CH4RCH] Reaction: Listing top CPU consumers..."
+            ps aux --sort=-%cpu 2>/dev/null | head -5 || echo "[CH4RCH] Cannot list processes."
+            ;;
+        *)
+            echo "[CH4RCH] No specific reaction defined for $metric_type."
+            ;;
+    esac
+    
+    # Log reaction to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "ADAPTIVE_REACT metric=$metric_type value=$value threshold=$threshold"
+    fi
+    
+    # Add reaction to knowledge graph
+    if [ -x "$CH4RCH_SRC/build-tools/knowledge-graph" ]; then
+        "$CH4RCH_SRC/build-tools/knowledge-graph" add-node "reaction_$(date +%s)" "adaptive-reaction" \
+            "{\"metric\":\"$metric_type\",\"value\":$value,\"threshold\":$threshold}" > /dev/null 2>&1 || true
+    fi
+}
+
+threshold() {
+    local metric_type="$1"
+    local value="$2"
+    
+    if [ -z "$metric_type" ] || [ -z "$value" ]; then
+        echo "Usage: $0 threshold <metric_type> <value>"
+        echo "Current thresholds:"
+        echo "  CPU_THRESHOLD=$CPU_THRESHOLD"
+        echo "  MEMORY_THRESHOLD=$MEMORY_THRESHOLD"
+        echo "  DISK_THRESHOLD=$DISK_THRESHOLD"
+        exit 1
+    fi
+    
+    export "${metric_type^^}_THRESHOLD=$value"
+    echo "[CH4RCH] Threshold set: ${metric_type^^}_THRESHOLD=$value"
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    analyze)
+        shift
+        analyze "${1:-}" "${2:-}" "${3:-}"
+        ;;
+    react)
+        shift
+        react "${1:-}" "${2:-}" "${3:-}"
+        ;;
+    threshold)
+        shift
+        threshold "${1:-}" "${2:-}"
+        ;;
+    check)
+        echo "[CH4RCH] Running full adaptive check..."
+        if [ -x "$CH4RCH_SRC/build-tools/ch4rch-telemetry" ]; then
+            local cpu=$("$CH4RCH_SRC/build-tools/ch4rch-telemetry" cpu)
+            local memory=$("$CH4RCH_SRC/build-tools/ch4rch-telemetry" memory)
+            local disk=$("$CH4RCH_SRC/build-tools/ch4rch-telemetry" disk)
+            analyze cpu "$cpu" "$CPU_THRESHOLD"
+            analyze memory "$memory" "$MEMORY_THRESHOLD"
+            analyze disk "$disk" "$DISK_THRESHOLD"
+        else
+            echo "[CH4RCH] ERROR: ch4rch-telemetry not found."
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {analyze|react|threshold|check} [args]"
+        echo "  analyze <metric> <value> [threshold]  - Analyze metric against threshold"
+        echo "  react <metric> <value> [threshold]    - Trigger adaptive reaction"
+        echo "  threshold <metric> <value>            - Set threshold"
+        echo "  check                                 - Full system check"
+        exit 1
+        ;;
+esac
