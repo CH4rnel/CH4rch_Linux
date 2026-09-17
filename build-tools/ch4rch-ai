@@ -1,0 +1,149 @@
+#!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# AI Supervision Platform Manager for CH4rch Linux.
+# Implements ADR-09: agent-agnostic, secure by default, isolated execution.
+
+set -e
+
+source "$(dirname "$0")/build.conf"
+
+STATE_FILE="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/ai-platform.state"
+PROFILES_DIR="$CH4RCH_SRC/profiles"
+
+# Ensure directories exist
+mkdir -p "$(dirname "$STATE_FILE")"
+mkdir -p "$PROFILES_DIR"
+
+# Default state is DISABLED (Secure by default)
+if [ ! -f "$STATE_FILE" ]; then
+    echo "DISABLED" > "$STATE_FILE"
+fi
+
+enable_platform() {
+    echo "[CH4RCH] Enabling AI Supervision Platform..."
+    echo "WARNING: This will allow AI agents to interact with the system."
+    echo "All actions will be strictly isolated and logged to the hash-chain."
+    read -p "Are you sure you want to proceed? (yes/no): " confirm
+    
+    if [ "$confirm" = "yes" ]; then
+        echo "ENABLED" > "$STATE_FILE"
+        echo "[CH4RCH] AI Platform ENABLED."
+        
+        # Log to hash-chain
+        if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+            "$CH4RCH_SRC/build-tools/hash-chain.sh" "AI_PLATFORM_ENABLE"
+        fi
+        
+        # Publish event
+        if [ -x "$CH4RCH_SRC/build-tools/ch4rch-events" ]; then
+            "$CH4RCH_SRC/build-tools/ch4rch-events" publish "ai-platform" "{\"action\":\"enabled\"}" > /dev/null 2>&1 || true
+        fi
+    else
+        echo "[CH4RCH] Operation cancelled."
+    fi
+}
+
+disable_platform() {
+    echo "[CH4RCH] Disabling AI Supervision Platform..."
+    echo "DISABLED" > "$STATE_FILE"
+    echo "[CH4RCH] AI Platform DISABLED."
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "AI_PLATFORM_DISABLE"
+    fi
+}
+
+status_platform() {
+    local state=$(cat "$STATE_FILE" 2>/dev/null || echo "DISABLED")
+    echo "[CH4RCH] AI Supervision Platform status: $state"
+    
+    if [ "$state" = "ENABLED" ]; then
+        echo "  - Agents can execute read-only and approved remediation tasks."
+        echo "  - All actions are sandboxed via bubblewrap."
+        echo "  - Audit trail is active in hash-chain."
+    else
+        echo "  - Platform is securely disabled by default."
+        echo "  - Use 'ch4rch-ai enable' to activate (requires explicit confirmation)."
+    fi
+}
+
+profile_action() {
+    local profile_name="$1"
+    
+    if [ -z "$profile_name" ]; then
+        echo "Available profiles:"
+        ls -1 "$PROFILES_DIR" 2>/dev/null | sed 's/\.yaml$//' || echo "  (none)"
+        return 0
+    fi
+    
+    local profile_file="$PROFILES_DIR/${profile_name}.yaml"
+    if [ ! -f "$profile_file" ]; then
+        echo "[CH4RCH] ERROR: Profile '$profile_name' not found at $profile_file"
+        exit 1
+    fi
+    
+    echo "[CH4RCH] Loading AI Agent Profile: $profile_name"
+    cat "$profile_file"
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "AI_PROFILE_LOAD name=$profile_name"
+    fi
+}
+
+run_agent_task() {
+    local task_cmd="$1"
+    local state=$(cat "$STATE_FILE" 2>/dev/null || echo "DISABLED")
+    
+    if [ "$state" != "ENABLED" ]; then
+        echo "[CH4RCH] ERROR: AI Platform is DISABLED. Cannot execute agent task."
+        echo "[CH4RCH] Run 'ch4rch-ai enable' first."
+        exit 1
+    fi
+    
+    echo "[CH4RCH] Executing agent task in isolated sandbox..."
+    
+    # Execute via isolation utility
+    if [ -x "$CH4RCH_SRC/build-tools/isolate.sh" ]; then
+        "$CH4RCH_SRC/build-tools/isolate.sh" run "$task_cmd"
+    else
+        echo "[CH4RCH] ERROR: Isolation utility not found."
+        exit 1
+    fi
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "AI_AGENT_TASK cmd=$task_cmd"
+    fi
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    enable)
+        enable_platform
+        ;;
+    disable)
+        disable_platform
+        ;;
+    status)
+        status_platform
+        ;;
+    profile)
+        shift
+        profile_action "${1:-}"
+        ;;
+    run)
+        shift
+        run_agent_task "$*"
+        ;;
+    *)
+        echo "Usage: $0 {enable|disable|status|profile|run} [args]"
+        echo "  enable               - Enable AI platform (requires confirmation)"
+        echo "  disable              - Disable AI platform"
+        echo "  status               - Show current platform status"
+        echo "  profile [name]       - List or load an agent profile"
+        echo "  run <command>        - Execute command as AI agent (requires ENABLED)"
+        exit 1
+        ;;
+esac
