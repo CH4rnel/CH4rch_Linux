@@ -40,3 +40,4 @@ pacman -Sy \
     s6-linux-init \
     util-linux \
     dhcpcd
+    bubblewrap
