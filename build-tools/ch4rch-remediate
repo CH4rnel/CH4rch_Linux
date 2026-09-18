@@ -1,0 +1,130 @@
+#!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Remediation Capability Utility for CH4rch Linux.
+# Implements strict plan → confirmation → apply flow for high-risk actions.
+
+set -e
+
+source "$(dirname "$0")/build.conf"
+
+STATE_FILE="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/ai-platform.state"
+PLAN_FILE="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/pending-remediation.plan"
+
+check_ai_enabled() {
+    local state=$(cat "$STATE_FILE" 2>/dev/null || echo "DISABLED")
+    if [ "$state" != "ENABLED" ]; then
+        echo "[CH4RCH] ERROR: AI Platform is DISABLED. Remediation requires explicit enablement."
+        exit 1
+    fi
+}
+
+generate_plan() {
+    local action="$1"
+    local target="$2"
+    
+    echo "[CH4RCH] Generating remediation plan for: $action on $target"
+    
+    # Simulate plan generation (in real scenario, this queries the system/agent)
+    cat > "$PLAN_FILE" << EOF
+# CH4rch Remediation Plan
+# Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+ACTION: $action
+TARGET: $target
+RISK_LEVEL: high
+REQUIRE_CONFIRMATION: true
+
+CHANGES:
+  - Stop vulnerable service: $target
+  - Apply security patch / update configuration
+  - Restart service with hardened flags
+
+WARNING: This action will temporarily disrupt the target service.
+EOF
+    
+    echo "[CH4RCH] Plan saved to: $PLAN_FILE"
+    cat "$PLAN_FILE"
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "REMEDIATION_PLAN action=$action target=$target risk=high"
+    fi
+}
+
+apply_plan() {
+    if [ ! -f "$PLAN_FILE" ]; then
+        echo "[CH4RCH] ERROR: No pending plan found. Run 'plan' first."
+        exit 1
+    fi
+    
+    local risk=$(grep "^RISK_LEVEL:" "$PLAN_FILE" | awk '{print $2}')
+    local requires_confirm=$(grep "^REQUIRE_CONFIRMATION:" "$PLAN_FILE" | awk '{print $2}')
+    
+    if [ "$risk" = "high" ] && [ "$requires_confirm" = "true" ]; then
+        echo ""
+        echo "=========================================="
+        echo "⚠️  HIGH RISK ACTION REQUIRES CONFIRMATION ⚠️"
+        echo "=========================================="
+        echo "The agent is requesting to apply the following plan:"
+        cat "$PLAN_FILE"
+        echo ""
+        read -p "Type 'CONFIRM' exactly to apply this remediation, or anything else to cancel: " user_input
+        
+        if [ "$user_input" != "CONFIRM" ]; then
+            echo "[CH4RCH] Remediation CANCELLED by operator."
+            rm -f "$PLAN_FILE"
+            
+            if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+                "$CH4RCH_SRC/build-tools/hash-chain.sh" "REMEDIATION_CANCELLED reason=operator_denied"
+            fi
+            exit 0
+        fi
+    fi
+    
+    echo "[CH4RCH] Applying remediation plan..."
+    
+    # Simulate execution (in real scenario, this executes via microVM/isolate.sh)
+    echo "  [1/3] Stopping target service..."
+    sleep 1
+    echo "  [2/3] Applying patch/configuration..."
+    sleep 1
+    echo "  [3/3] Restarting service..."
+    sleep 1
+    
+    echo "[CH4RCH] Remediation APPLIED successfully."
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "REMEDIATION_APPLIED plan=$PLAN_FILE"
+    fi
+    
+    # Publish event
+    if [ -x "$CH4RCH_SRC/build-tools/ch4rch-events" ]; then
+        "$CH4RCH_SRC/build-tools/ch4rch-events" publish "remediation" "{\"status\":\"applied\",\"plan\":\"$PLAN_FILE\"}" > /dev/null 2>&1 || true
+    fi
+    
+    # Cleanup plan file after successful application
+    rm -f "$PLAN_FILE"
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    plan)
+        check_ai_enabled
+        if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
+            echo "Usage: $0 plan <action> <target>"
+            echo "Example: $0 plan vuln.remediate sshd"
+            exit 1
+        fi
+        generate_plan "$2" "$3"
+        ;;
+    apply)
+        check_ai_enabled
+        apply_plan
+        ;;
+    *)
+        echo "Usage: $0 {plan|apply} [args]"
+        echo "  plan <action> <target>  - Generate a remediation plan (requires review)"
+        echo "  apply                   - Apply the pending plan (requires explicit confirmation for high risk)"
+        exit 1
+        ;;
+esac
