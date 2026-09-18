@@ -111,6 +111,33 @@ threshold() {
     echo "[CH4RCH] Threshold set: ${metric_type^^}_THRESHOLD=$value"
 }
 
+run_full_check() {
+    echo "[CH4RCH] Running full adaptive check..."
+    
+    # Telemetry checks
+    if [ -x "$CH4RCH_SRC/build-tools/ch4rch-telemetry" ]; then
+        local cpu=$("$CH4RCH_SRC/build-tools/ch4rch-telemetry" cpu)
+        local memory=$("$CH4RCH_SRC/build-tools/ch4rch-telemetry" memory)
+        local disk=$("$CH4RCH_SRC/build-tools/ch4rch-telemetry" disk)
+        
+        analyze cpu "$cpu" "$CPU_THRESHOLD"
+        analyze memory "$memory" "$MEMORY_THRESHOLD"
+        analyze disk "$disk" "$DISK_THRESHOLD"
+    else
+        echo "[CH4RCH] ERROR: ch4rch-telemetry not found."
+        exit 1
+    fi
+    
+    # NEW: yep, Trigger autonomous auditor if AI platform is enabled
+    if [ -x "$CH4RCH_SRC/build-tools/ch4rch-auditor" ]; then
+        local ai_state=$(cat "${CH4RCH_BUILDROOT:-/var/ch4rch-build}/ai-platform.state" 2>/dev/null || echo "DISABLED")
+        if [ "$ai_state" = "ENABLED" ]; then
+            echo "[CH4RCH] AI Platform enabled: triggering autonomous package audit..."
+            "$CH4RCH_SRC/build-tools/ch4rch-auditor" scan-packages > /dev/null 2>&1 || true
+        fi
+    fi
+}
+
 # Main command dispatcher
 case "${1:-}" in
     analyze)
@@ -126,18 +153,7 @@ case "${1:-}" in
         threshold "${1:-}" "${2:-}"
         ;;
     check)
-        echo "[CH4RCH] Running full adaptive check..."
-        if [ -x "$CH4RCH_SRC/build-tools/ch4rch-telemetry" ]; then
-            local cpu=$("$CH4RCH_SRC/build-tools/ch4rch-telemetry" cpu)
-            local memory=$("$CH4RCH_SRC/build-tools/ch4rch-telemetry" memory)
-            local disk=$("$CH4RCH_SRC/build-tools/ch4rch-telemetry" disk)
-            analyze cpu "$cpu" "$CPU_THRESHOLD"
-            analyze memory "$memory" "$MEMORY_THRESHOLD"
-            analyze disk "$disk" "$DISK_THRESHOLD"
-        else
-            echo "[CH4RCH] ERROR: ch4rch-telemetry not found."
-            exit 1
-        fi
+        run_full_check
         ;;
     *)
         echo "Usage: $0 {analyze|react|threshold|check} [args]"
