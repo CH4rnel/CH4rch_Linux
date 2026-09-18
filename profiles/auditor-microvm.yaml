@@ -1,10 +1,10 @@
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
-# MicroVM-backed Agent Profile for higher-risk capabilities (e.g., network scanning).
+# MicroVM-backed Agent Profile with Remediation Capabilities.
 
 agent:
-  name: "System Auditor (MicroVM)"
-  version: "1.0.0"
-  mode: "read-only"
+  name: "System Auditor & Remediation Agent"
+  version: "1.1.0"
+  mode: "read-only-with-confirmed-remediation"
 
 enabled: false
 
@@ -14,8 +14,8 @@ isolation:
   network: lan-only
   filesystem:
     read_only: ["/etc", "/usr", "/var/log"]
-    read_write: ["/tmp", "/var/tmp"] # Ephemeral overlay
-  ttl: 300 # Auto-teardown after 5 minutes of inactivity
+    read_write: ["/tmp", "/var/tmp"]
+  ttl: 300
 
 capabilities:
   - id: system.audit.read
@@ -23,6 +23,9 @@ capabilities:
   - id: network.scan.local
     risk: medium
     scope: lan-only
+  - id: vuln.remediate
+    risk: high
+    require_confirmation: true
 
 ui:
   trigger: context-menu
