@@ -1,0 +1,162 @@
+#!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Predictive Maintenance Utility for CH4rch Linux.
+# Implements weibull distribution modeling for failure prediction based on telemetry data.
+
+set -e
+
+source "$(dirname "$0")/build.conf"
+
+METRICS_DIR="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/metrics"
+PREDICTIONS_DIR="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/predictions"
+mkdir -p "$PREDICTIONS_DIR"
+
+# Weibull distribution parameters (simplified MVP)
+# Shape parameter (beta): >1 indicates wear-out failures
+# Scale parameter (eta): characteristic life
+WEIBULL_BETA="${WEIBULL_BETA:-2.5}"  # Typical for hardware wear-out
+WEIBULL_ETA="${WEIBULL_ETA:-1000}"   # Characteristic life in hours
+
+calculate_weibull_reliability() {
+    local time_hours="$1"
+    local beta="$WEIBULL_BETA"
+    local eta="$WEIBULL_ETA"
+    
+    # Weibull reliability function: R(t) = exp(-(t/eta)^beta)
+    # Using awk for floating-point math
+    echo "scale=6; e(-1 * ($time_hours / $eta) ^ $beta)" | bc -l 2>/dev/null || echo "0.95"
+}
+
+analyze_telemetry() {
+    echo "[CH4RCH] Analyzing historical telemetry data..."
+    
+    if [ ! -d "$METRICS_DIR" ]; then
+        echo "[CH4RCH] WARNING: No metrics directory found at $METRICS_DIR"
+        echo "[CH4RCH] Using default Weibull parameters for prediction."
+        return 0
+    fi
+    
+    # Count available metrics files
+    local metrics_count=$(ls -1 "$METRICS_DIR"/*.json 2>/dev/null | wc -l || echo "0")
+    
+    if [ "$metrics_count" -eq 0 ]; then
+        echo "[CH4RCH] WARNING: No metrics files found. Cannot perform historical analysis."
+        echo "[CH4RCH] Using default Weibull parameters for prediction."
+        return 0
+    fi
+    
+    echo "[CH4RCH] Found $metrics_count historical metrics files."
+    
+    # Extract average CPU and memory usage from recent metrics
+    local avg_cpu=0
+    local avg_memory=0
+    local count=0
+    
+    for metrics_file in "$METRICS_DIR"/*.json; do
+        [ -f "$metrics_file" ] || continue
+        
+        # Simple extraction (MVP: assumes JSON structure from ch4rch-telemetry)
+        local cpu=$(grep -o '"cpu":[0-9.]*' "$metrics_file" 2>/dev/null | cut -d: -f2 || echo "0")
+        local memory=$(grep -o '"memory":[0-9.]*' "$metrics_file" 2>/dev/null | cut -d: -f2 || echo "0")
+        
+        if [ -n "$cpu" ] && [ -n "$memory" ]; then
+            avg_cpu=$(echo "$avg_cpu + $cpu" | bc -l 2>/dev/null || echo "$avg_cpu")
+            avg_memory=$(echo "$avg_memory + $memory" | bc -l 2>/dev/null || echo "$avg_memory")
+            ((count++))
+        fi
+    done
+    
+    if [ "$count" -gt 0 ]; then
+        avg_cpu=$(echo "scale=2; $avg_cpu / $count" | bc -l 2>/dev/null || echo "0")
+        avg_memory=$(echo "scale=2; $avg_memory / $count" | bc -l 2>/dev/null || echo "0")
+        
+        echo "[CH4RCH] Historical analysis complete:"
+        echo "  Average CPU usage: ${avg_cpu}%"
+        echo "  Average Memory usage: ${avg_memory}%"
+        echo "  Sample size: $count metrics"
+        
+        # Adjust Weibull parameters based on load (simplified heuristic)
+        # High load -> shorter expected life
+        local load_factor=$(echo "scale=2; ($avg_cpu + $avg_memory) / 200" | bc -l 2>/dev/null || echo "0.5")
+        local adjusted_eta=$(echo "scale=0; $WEIBULL_ETA * (1 - $load_factor * 0.3)" | bc -l 2>/dev/null || echo "$WEIBULL_ETA")
+        
+        echo "[CH4RCH] Adjusted Weibull scale parameter (eta): $adjusted_eta hours"
+        echo "$adjusted_eta" > "$PREDICTIONS_DIR/adjusted_eta"
+    else
+        echo "[CH4RCH] WARNING: Could not parse metrics data. Using default parameters."
+    fi
+}
+
+predict_failure() {
+    local component="${1:-system}"
+    local time_horizon="${2:-24}"  # hours
+    
+    echo "[CH4RCH] Predicting failure probability for '$component' over next $time_horizon hours..."
+    
+    # Load adjusted eta if available
+    local eta="$WEIBULL_ETA"
+    if [ -f "$PREDICTIONS_DIR/adjusted_eta" ]; then
+        eta=$(cat "$PREDICTIONS_DIR/adjusted_eta")
+    fi
+    
+    # Calculate reliability using Weibull
+    local reliability=$(calculate_weibull_reliability "$time_horizon")
+    local failure_prob=$(echo "scale=6; 1 - $reliability" | bc -l 2>/dev/null || echo "0.05")
+    
+    # Convert to percentage
+    local failure_pct=$(echo "scale=2; $failure_prob * 100" | bc -l 2>/dev/null || echo "5.00")
+    
+    local prediction_file="$PREDICTIONS_DIR/prediction_${component}_$(date +%s).json"
+    
+    cat > "$prediction_file" << EOF
+{
+  "component": "$component",
+  "prediction_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "time_horizon_hours": $time_horizon,
+  "weibull_parameters": {
+    "beta": $WEIBULL_BETA,
+    "eta": $eta
+  },
+  "reliability": $reliability,
+  "failure_probability": $failure_prob,
+  "failure_percentage": $failure_pct,
+  "risk_level": "$([ $(echo "$failure_pct > 20" | bc -l 2>/dev/null || echo "0") -eq 1 ] && echo "high" || echo "low")",
+  "recommendation": "$([ $(echo "$failure_pct > 20" | bc -l 2>/dev/null || echo "0") -eq 1 ] && echo "Schedule maintenance or reduce load" || echo "System operating within normal parameters")"
+}
+EOF
+    
+    echo "[CH4RCH] Prediction complete:"
+    cat "$prediction_file"
+    
+    # Log to hash-chain
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "PREDICTIVE_ANALYSIS component=$component failure_prob=$failure_pct"
+    fi
+    
+    # Publish event
+    if [ -x "$CH4RCH_SRC/build-tools/ch4rch-events" ]; then
+        "$CH4RCH_SRC/build-tools/ch4rch-events" publish "predictive" "{\"component\":\"$component\",\"failure_prob\":$failure_pct}" > /dev/null 2>&1 || true
+    fi
+    
+    # Add to knowledge graph
+    if [ -x "$CH4RCH_SRC/build-tools/knowledge-graph" ]; then
+        "$CH4RCH_SRC/build-tools/knowledge-graph" add-node "prediction_$(date +%s)" "predictive-maintenance" \
+            "{\"component\":\"$component\",\"failure_prob\":$failure_pct}" > /dev/null 2>&1 || true
+    fi
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    analyze)
+        analyze_telemetry
+        ;;
+    predict)
+        predict_failure "${2:-system}" "${3:-24}"
+        ;;
+    *)
+        echo "Usage: $0 {analyze|predict} [args]"
+        echo "  analyze                          - Analyze historical telemetry data"
+        echo "  predict [component] [hours]      - Predict failure probability (default: system, 24h)"
+        exit 1
+        ;;
+esac
