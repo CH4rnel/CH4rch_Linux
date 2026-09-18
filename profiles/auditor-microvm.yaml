@@ -1,0 +1,32 @@
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# MicroVM-backed Agent Profile for higher-risk capabilities (e.g., network scanning).
+
+agent:
+  name: "System Auditor (MicroVM)"
+  version: "1.0.0"
+  mode: "read-only"
+
+enabled: false
+
+isolation:
+  backend: microvm
+  privilege: unprivileged
+  network: lan-only
+  filesystem:
+    read_only: ["/etc", "/usr", "/var/log"]
+    read_write: ["/tmp", "/var/tmp"] # Ephemeral overlay
+  ttl: 300 # Auto-teardown after 5 minutes of inactivity
+
+capabilities:
+  - id: system.audit.read
+    risk: low
+  - id: network.scan.local
+    risk: medium
+    scope: lan-only
+
+ui:
+  trigger: context-menu
+  hotkey: "Super+Shift+Space"
+
+audit:
+  log_to: trust-chain
