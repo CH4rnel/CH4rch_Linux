@@ -1,0 +1,130 @@
+#!/bin/bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# Autonomous Auditor for CH4rch Linux.
+# Implements read-only security and package auditing, generating reports for remediation.
+
+set -e
+
+source "$(dirname "$0")/build.conf"
+
+STATE_FILE="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/ai-platform.state"
+REPORT_DIR="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/audit-reports"
+mkdir -p "$REPORT_DIR"
+
+check_ai_enabled() {
+    local state=$(cat "$STATE_FILE" 2>/dev/null || echo "DISABLED")
+    if [ "$state" != "ENABLED" ]; then
+        echo "[CH4RCH] ERROR: AI Platform is DISABLED. Auditor requires explicit enablement."
+        exit 1
+    fi
+}
+
+scan_packages() {
+    check_ai_enabled
+    echo "[CH4RCH] Running autonomous package audit (scan-packages)..."
+    
+    local outdated_count=0
+    local report_file="$REPORT_DIR/pkg_audit_$(date +%s).json"
+    
+    if command -v pacman &> /dev/null; then
+        # Check for outdated packages (MVP vulnerability proxy)
+        outdated_count=$(pacman -Qu 2>/dev/null | wc -l || echo "0")
+    fi
+    
+    cat > "$report_file" << EOF
+{
+  "scan_type": "package_audit",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "findings": {
+    "outdated_packages_count": $outdated_count,
+    "severity": "$([ "$outdated_count" -gt 0 ] && echo "medium" || echo "low")"
+  },
+  "recommendation": "$([ "$outdated_count" -gt 0 ] && echo "Run 'ch4rch-remediate plan pkg-upgrade all'" || echo "No action required")"
+}
+EOF
+    
+    echo "[CH4RCH] Package audit complete. Findings saved to: $report_file"
+    cat "$report_file"
+    
+    # Log to hash-chain and event bus
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "AUDITOR_SCAN type=packages findings=$outdated_count"
+    fi
+    if [ -x "$CH4RCH_SRC/build-tools/ch4rch-events" ]; then
+        "$CH4RCH_SRC/build-tools/ch4rch-events" publish "auditor" "{\"scan\":\"packages\",\"findings\":$outdated_count}" > /dev/null 2>&1 || true
+    fi
+}
+
+scan_permissions() {
+    check_ai_enabled
+    echo "[CH4RCH] Running autonomous permission audit (scan-permissions)..."
+    
+    local report_file="$REPORT_DIR/perm_audit_$(date +%s).json"
+    local suspicious_count=0
+    
+    # MVP: Check for world-writable files in /etc (simplified)
+    if [ -d /etc ]; then
+        suspicious_count=$(find /etc -type f -perm -002 2>/dev/null | wc -l || echo "0")
+    fi
+    
+    cat > "$report_file" << EOF
+{
+  "scan_type": "permission_audit",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "findings": {
+    "world_writable_etc_files": $suspicious_count,
+    "severity": "$([ "$suspicious_count" -gt 0 ] && echo "high" || echo "low")"
+  },
+  "recommendation": "$([ "$suspicious_count" -gt 0 ] && echo "Review and chmod o-w suspicious files" || echo "No action required")"
+}
+EOF
+    
+    echo "[CH4RCH] Permission audit complete. Findings saved to: $report_file"
+    cat "$report_file"
+    
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "AUDITOR_SCAN type=permissions findings=$suspicious_count"
+    fi
+}
+
+generate_report() {
+    check_ai_enabled
+    echo "[CH4RCH] Generating consolidated audit report..."
+    
+    local latest_pkg=$(ls -t "$REPORT_DIR"/pkg_audit_*.json 2>/dev/null | head -n 1)
+    local latest_perm=$(ls -t "$REPORT_DIR"/perm_audit_*.json 2>/dev/null | head -n 1)
+    
+    echo "{"
+    echo "  \"consolidated_report\": true,"
+    echo "  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+    echo "  \"components\": ["
+    [ -n "$latest_pkg" ] && cat "$latest_pkg"
+    echo ","
+    [ -n "$latest_perm" ] && cat "$latest_perm"
+    echo "]"
+    echo "}"
+    
+    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "AUDITOR_REPORT_GENERATED"
+    fi
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    scan-packages)
+        scan_packages
+        ;;
+    scan-permissions)
+        scan_permissions
+        ;;
+    report)
+        generate_report
+        ;;
+    *)
+        echo "Usage: $0 {scan-packages|scan-permissions|report}"
+        echo "  scan-packages    - Scan for outdated/vulnerable packages"
+        echo "  scan-permissions - Scan for suspicious file permissions"
+        echo "  report           - Generate consolidated audit report"
+        exit 1
+        ;;
+esac
