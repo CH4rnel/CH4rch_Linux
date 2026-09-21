@@ -1,11 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # Test: Verify logger service exists and is included in base bundle.
 
-set -e
+set -euo pipefail
 
 echo "Running logger service tests..."
-
+# shellcheck source=./build.conf
 SOURCE_DIR="rootfs-overlay/etc/s6-rc/source"
 
 # Test 1: Check logger service exists
@@ -20,8 +20,9 @@ if [ ! -f "$SOURCE_DIR/logger/type" ]; then
     exit 1
 fi
 
-if [ "$(cat "$SOURCE_DIR/logger/type")" != "oneshot" ]; then
-    echo "FAIL: logger should be oneshot type."
+logger_type=$(tr -d '[:space:]' < "$SOURCE_DIR/logger/type")
+if [ "$logger_type" != "oneshot" ]; then
+    echo "FAIL: logger should be oneshot type (got '$logger_type')."
     exit 1
 fi
 
@@ -39,5 +40,5 @@ if ! grep -q "^logger$" "$SOURCE_DIR/base/contents"; then
 fi
 echo "PASS: logger is in base bundle."
 
-echo "All logger service tests passed."
+echo "✅ All logger service tests passed."
 exit 0
