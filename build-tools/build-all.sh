@@ -49,6 +49,7 @@ else
 fi
 
 log "Building ISO..."
+./build-tools/mkinitramfs.sh
 "$CH4RCH_SRC/build-tools/build-iso.sh"
 
 # Create snapshot after successful build

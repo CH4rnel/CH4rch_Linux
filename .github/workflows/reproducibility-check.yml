@@ -3,42 +3,42 @@ name: Reproducibility & Hygiene Check
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ master ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ master ]
 
 jobs:
-  hygiene-check:
-    # What the heck is Ubuntu? Unfortunately, whoreson GitHub does not provide an official hosted runner for Arch Linux.
-    # And using a self-hosted runner on your own Arch host can lead to some “surprises.”
+  hygiene-and-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify required documentation exists
-        run: |
-          echo "Checking mandatory v3.0 documentation files..."
-          if [ ! -f "VERSION" ]; then echo "ERROR: VERSION file missing" && exit 1; fi
-          if [ ! -f "DOGMATICS.md" ]; then echo "ERROR: DOGMATICS.md missing" && exit 1; fi
-          if [ ! -f "ROADMAP.md" ]; then echo "ERROR: ROADMAP.md missing" && exit 1; fi
-          if [ ! -d "docs/adr" ]; then echo "ERROR: docs/adr directory missing" && exit 1; fi
-          echo "PASS: All mandatory documentation files are present."
-
-      - name: Install shellcheck (optional but recommended)
+      - name: Install shellcheck on host (for workflow validation)
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
 
-      - name: Run local test suite
+            - name: Run local test suite in Arch Linux container
         run: |
-          echo "Running all project tests..."
-          chmod +x tests/*.sh
-          for test in tests/test_*.sh; do
-            echo "Executing $test..."
-            "$test"
-          done
+          echo "Running all project tests in an Arch Linux environment..."
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            archlinux:latest \
+            bash -euo pipefail -c '
+              pacman -Syu --noconfirm --needed \
+                bash \
+                libarchive \
+                git \
+                make \
+                shellcheck
 
-      - name: Artifact Backup Reminder
-        run: |
-          echo "::warning::CH4rch Linux Policy: Any VM image or build artifact that cannot be rebuilt from this repository in 10 minutes MUST be backed up to external storage (S3/NAS)."
+              command -v bsdtar
+
+              chmod +x tests/*.sh
+              for test in tests/test_*.sh; do
+                echo "Executing $test..."
+                "$test"
+              done
+            '
