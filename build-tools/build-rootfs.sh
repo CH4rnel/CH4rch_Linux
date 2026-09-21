@@ -1,5 +1,5 @@
-# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 #!/usr/bin/env bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # build-rootfs.sh
 # Purpose: Bootstrap the minimal CH4rch Linux root filesystem.
 # Logic: Configures pacman with upstream Arch repos, initializes keys, 
@@ -7,9 +7,8 @@
 
 set -euo pipefail
 
-# Configuration
-CH4RCH_ROOTFS="${CH4RCH_ROOTFS:-$PWD/rootfs}"
-CH4RCH_REPO="${CH4RCH_REPO:-$PWD/repo}"
+# shellcheck source=/dev/null
+source "$(dirname "$0")/build.conf"
 
 echo "[*] Setting up rootfs directory at $CH4RCH_ROOTFS"
 mkdir -p "$CH4RCH_ROOTFS"
@@ -39,14 +38,18 @@ EOF
 # Replace placeholder with actual path safely
 sed -i "s|CH4RCH_REPO_PLACEHOLDER|$CH4RCH_REPO|g" "$CH4RCH_ROOTFS/etc/pacman.conf"
 
-# Ensure directory structure exists and provide a default upstream mirrorlist
+# Initialize pacman mirrorlist inside the rootfs
 mkdir -p "$CH4RCH_ROOTFS/etc/pacman.d"
-echo "Server = https://geo.mirror.pkgbuild.com/\$repo/os/\$arch" > "$CH4RCH_ROOTFS/etc/pacman.d/mirrorlist"
+# shellcheck disable=SC2016
+# We intentionally use single quotes to write literal $repo and $arch for pacman to expand later
+echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch' > "$CH4RCH_ROOTFS/etc/pacman.d/mirrorlist"
 
-echo "[*] Installing base toolchain packages"
+echo "[*] Installing base toolchain and CH4rch core packages"
 # P0-1 FIX: Added missing backslashes for line continuation
+# P1-1 FIX: Added ch4rch-base-files, ch4rch-s6-init, and archlinux-keyring
 pacman -Sy --root "$CH4RCH_ROOTFS" --cachedir "$CH4RCH_ROOTFS/var/cache/pacman/pkg" \
     pacman \
+    archlinux-keyring \
     glibc \
     linux \
     linux-firmware \
@@ -56,6 +59,8 @@ pacman -Sy --root "$CH4RCH_ROOTFS" --cachedir "$CH4RCH_ROOTFS/var/cache/pacman/p
     eudev \
     dhcpcd \
     bubblewrap \
-    sqlite
+    sqlite \
+    ch4rch-base-files \
+    ch4rch-s6-init
 
 echo "[*] Rootfs bootstrap completed successfully."
