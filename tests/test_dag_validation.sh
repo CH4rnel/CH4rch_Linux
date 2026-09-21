@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # Test: Validate s6-rc service graph integrity (no dangling dependencies, all services defined).
 
-set -e
+set -euo pipefail
 
 echo "Running DAG validation tests..."
 
@@ -11,9 +11,13 @@ BASE_CONTENTS="$SOURCE_DIR/base/contents"
 
 # Test 1: Check that all services in base/contents exist
 echo "[TEST] Checking base bundle services exist..."
-while IFS= read -r service; do
+while IFS= read -r service || [ -n "$service" ]; do
     # Skip comments and empty lines
-    [[ "$service" =~ ^#.*$ || -z "$service" ]] && continue
+    [[ "$service" =~ ^[[:space:]]*#.*$ || -z "${service//[[:space:]]/}" ]] && continue
+    
+    # Trim ALL whitespace robustly (spaces, tabs, \n, \r)
+    service=$(echo "$service" | tr -d '[:space:]')
+    [ -z "$service" ] && continue
     
     if [ ! -d "$SOURCE_DIR/$service" ]; then
         echo "FAIL: Service '$service' listed in base/contents but directory missing."
@@ -35,7 +39,9 @@ for service_dir in "$SOURCE_DIR"/*/; do
         exit 1
     fi
     
-    service_type=$(cat "$service_dir/type")
+    # fix: Use tr -d '[:space:]' for bulletproof cross-platform whitespace stripping
+    service_type=$(tr -d '[:space:]' < "$service_dir/type")
+    
     if [ "$service_type" = "longrun" ]; then
         if [ ! -f "$service_dir/run" ]; then
             echo "FAIL: Longrun service '$service_name' missing 'run' file."
@@ -66,8 +72,12 @@ for service_dir in "$SOURCE_DIR"/*/; do
     
     [ -f "$deps_file" ] || continue
     
-    while IFS= read -r dep; do
-        [[ "$dep" =~ ^#.*$ || -z "$dep" ]] && continue
+    while IFS= read -r dep || [ -n "$dep" ]; do
+        [[ "$dep" =~ ^[[:space:]]*#.*$ || -z "${dep//[[:space:]]/}" ]] && continue
+        
+        # Trim ALL whitespace robustly
+        dep=$(echo "$dep" | tr -d '[:space:]')
+        [ -z "$dep" ] && continue
         
         if [ ! -d "$SOURCE_DIR/$dep" ]; then
             echo "FAIL: Service '$service_name' depends on '$dep', which does not exist."
@@ -77,5 +87,5 @@ for service_dir in "$SOURCE_DIR"/*/; do
 done
 echo "PASS: All dependency references are valid."
 
-echo "All DAG validation tests passed."
+echo "✅ All DAG validation tests passed."
 exit 0
