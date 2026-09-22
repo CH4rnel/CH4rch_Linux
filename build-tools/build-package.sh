@@ -1,6 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+
 set -e
 
+# shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
 
 build_repo() {
@@ -19,8 +22,8 @@ build_repo() {
             --syncdeps \
             --cleanbuild
 
-        mv *.pkg.tar.zst "$CH4RCH_PKGDEST/" 2>/dev/null || true
-        mv *.pkg.tar.zst.sig "$CH4RCH_PKGDEST/" 2>/dev/null || true
+        mv ./*.pkg.tar.zst "$CH4RCH_PKGDEST/" 2>/dev/null || true
+        mv ./*.pkg.tar.zst.sig "$CH4RCH_PKGDEST/" 2>/dev/null || true
     done
 }
 
