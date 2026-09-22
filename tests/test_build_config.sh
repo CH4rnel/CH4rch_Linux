@@ -20,7 +20,8 @@ if ! grep -q "𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭" "$CONFIG_
     exit 1
 fi
 
-# Check that CH4RCH_SRC is NOT hardcoded to $HOME
+# shellcheck disable=SC2016
+# We intentionally use single quotes to match literal '$HOME' in config file
 if grep -q 'CH4RCH_SRC="\$HOME' "$CONFIG_FILE"; then
     echo "FAIL: CH4RCH_SRC is hardcoded to \$HOME, breaking portability."
     exit 1

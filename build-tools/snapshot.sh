@@ -1,10 +1,11 @@
 #!/bin/bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # Btrfs snapshot management utility for CH4rch Linux rollback mechanism.
-# Implements ADR-03: rollback via btrfs snapshots, not secondary package store.
+# Implements rollback via btrfs snapshots, not secondary package store.
 
 set -e
 
+# shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
 
 SNAPSHOT_DIR="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/snapshots"

@@ -5,6 +5,7 @@
 
 set -e
 
+# shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
 
 # Domain colors (Qubes-inspired)

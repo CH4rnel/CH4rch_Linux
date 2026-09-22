@@ -1,10 +1,11 @@
 #!/bin/bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # MicroVM Launcher for CH4rch Linux.
-# Implements Phase 15: Disposable VM with read-only golden image + tmpfs/overlay.
+# Disposable VM with read-only golden image + tmpfs/overlay.
 
 set -e
 
+# shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
 
 # Default values

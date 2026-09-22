@@ -3,6 +3,8 @@
 # Compiles s6-rc database and generates the s6-linux-init canonical init system.
 
 set -e
+
+# shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
 
 echo "[CH4RCH] Installing s6 service sources from overlay..."

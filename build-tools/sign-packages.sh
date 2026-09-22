@@ -1,5 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+
 set -e
+
+# shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
 
 KEYID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | head -n1 | awk '{print $2}' | cut -d'/' -f2)
