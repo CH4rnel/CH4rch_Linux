@@ -22,6 +22,17 @@ ISO_NAME="CH4rch-$(cat "$CH4RCH_SRC/VERSION")-x86_64.iso"
 ISO_DIR="$CH4RCH_ISO/work"
 ISO_LABEL="CH4RCH_ISO"
 
+# Validation
+echo "[*] Validating required files..."
+if [[ ! -f "$CH4RCH_ROOTFS/boot/vmlinuz-linux" ]]; then
+    echo "ERROR: vmlinuz-linux not found in $CH4RCH_ROOTFS/boot/" >&2
+    exit 1
+fi
+if [[ ! -f "$CH4RCH_ROOTFS/boot/initramfs-linux.img" ]]; then
+    echo "ERROR: initramfs-linux.img not found in $CH4RCH_ROOTFS/boot/" >&2
+    exit 1
+fi
+
 echo "[*] Preparing ISO directory structure at $ISO_DIR"
 mkdir -p "$CH4RCH_ISO"
 rm -rf "$ISO_DIR"
@@ -36,7 +47,7 @@ echo "[*] Creating squashfs image of rootfs"
 mksquashfs "$CH4RCH_ROOTFS" "$ISO_DIR/ch4rch/ch4rch_rootfs.sfs" \
     -comp xz -noappend -no-recovery
 
-echo "[*] Generating GRUB configuration with UUID/LABEL search"
+echo "[*] Generating GRUB configuration with file-based root search"
 cat > "$ISO_DIR/boot/grub/grub.cfg" << EOF
 set timeout=5
 set default=0
@@ -49,10 +60,13 @@ menuentry "CH4rch Linux" {
 EOF
 
 echo "[*] Building ISO: $ISO_NAME"
-# Explicitly include modules for EFI/UEFI boot
-grub-mkrescue -o "$CH4RCH_ISO/$ISO_NAME" "$ISO_DIR" --modules=part_gpt,part_msdos,fat,iso9660,search,configfile,normal,chain -- -volid "$ISO_LABEL" # EFI/UEFI support
+# Correct xorriso syntax: arguments after -- are passed to xorriso
+grub-mkrescue -o "$CH4RCH_ISO/$ISO_NAME" "$ISO_DIR" \
+    --modules=part_gpt,part_msdos,fat,iso9660,search,configfile,normal,chain \
+    -- -volid "$ISO_LABEL"
 
 echo "[*] ISO created successfully at: $CH4RCH_ISO/$ISO_NAME"
+echo "[*] ISO size: $(du -h "$CH4RCH_ISO/$ISO_NAME" | cut -f1)"
 
 # Log to hash-chain
 if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
