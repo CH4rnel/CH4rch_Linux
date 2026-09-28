@@ -67,7 +67,7 @@ test_squashfs_usage() {
 # Test 4: Verify UUID-based root search (no hardcoded /dev/sr0)
 test_uuid_based_root() {
     if grep -q "root=/dev/sr0" "$BUILD_ISO_SCRIPT"; then
-        echo "FAIL: build-iso.sh hardcodes 'root=/dev/sr0' (P0-4 violation, breaks USB boot)"
+        echo "FAIL: build-iso.sh hardcodes 'root=/dev/sr0'"
         return 1
     fi
     
@@ -82,7 +82,11 @@ test_uuid_based_root() {
 
 # Test 5: Verify EFI configuration
 test_efi_configuration() {
-    if ! grep -qE "(grub-mkrescue.*--modules|efiboot|efi\.img)" "$BUILD_ISO_SCRIPT"; then
+    # Join all lines to support multiline pattern matching (grub-mkrescue with line continuations)
+    local script_content
+    script_content=$(tr '\n' ' ' < "$BUILD_ISO_SCRIPT")
+    
+    if ! echo "$script_content" | grep -qE "(grub-mkrescue.*--modules|efiboot|efi\.img)"; then
         echo "FAIL: build-iso.sh does not properly configure EFI modules"
         return 1
     fi
