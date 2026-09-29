@@ -1,9 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # GUI Isolation Wrapper for CH4rch Linux.
 # Implements Wayland + waypipe over virtio-vsock with domain-colored window borders.
+# Replaced eval with bash arrays to prevent shell injection.
 
-set -e
+set -euo pipefail
 
 # shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
@@ -21,17 +22,17 @@ usage() {
 }
 
 DOMAIN=""
-CMD=""
+USER_CMD=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --domain) DOMAIN="$2"; shift 2 ;;
-        --cmd) CMD="$2"; shift 2 ;;
+        --cmd) USER_CMD="$2"; shift 2 ;;
         *) echo "Unknown option: $1"; usage ;;
     esac
 done
 
-if [ -z "$DOMAIN" ] || [ -z "$CMD" ]; then
+if [[ -z "$DOMAIN" || -z "$USER_CMD" ]]; then
     usage
 fi
 
@@ -39,36 +40,41 @@ case "$DOMAIN" in
     trusted) BORDER_COLOR="$COLOR_TRUSTED" ;;
     untrusted) BORDER_COLOR="$COLOR_UNTRUSTED" ;;
     internet) BORDER_COLOR="$COLOR_INTERNET" ;;
-    *) echo "[CH4RCH] ERROR: Invalid domain '$DOMAIN'"; exit 1 ;;
+    *) echo "[CH4RCH] ERROR: Invalid domain '$DOMAIN'" >&2; exit 1 ;;
 esac
 
 echo "[CH4RCH] Preparing GUI isolation for domain: $DOMAIN (Border: $BORDER_COLOR)"
 
+# Build command as bash array to prevent shell injection
+FULL_CMD=()
+
 # Check for waypipe (fallback to stub if not installed)
 if command -v waypipe &> /dev/null; then
-    WAYPIPE_CMD="waypipe --vsock"
+    FULL_CMD+=(waypipe --vsock)
     echo "[CH4RCH] Using waypipe for Wayland protocol forwarding."
 else
-    WAYPIPE_CMD="echo '[WAYPIPE STUB]'"
-    echo "[CH4RCH] WARNING: waypipe not found. Running in stub mode (no actual GUI forwarding)."
+    FULL_CMD+=(echo "[WAYPIPE STUB]")
+    echo "[CH4RCH] WARNING: waypipe not found. Running in stub mode (no actual GUI forwarding)." >&2
 fi
 
-# Construct the execution command
-# In a real microVM, this would connect to the host's vsock port and the host compositor 
-# would wrap the received surface in a window with $BORDER_COLOR.
-FULL_CMD="$WAYPIPE_CMD --server $CMD"
+# Append server flag and user command
+FULL_CMD+=(--server)
+# Split user command into array elements safely
+read -ra USER_CMD_ARRAY <<< "$USER_CMD"
+FULL_CMD+=("${USER_CMD_ARRAY[@]}")
 
 echo "[CH4RCH] Generated GUI isolation command:"
-echo "  $FULL_CMD"
+echo "  ${FULL_CMD[*]}"
 
-if [ "${DRY_RUN:-true}" = "false" ]; then
+if [[ "${DRY_RUN:-true}" = "false" ]]; then
     echo "[CH4RCH] Executing..."
-    eval "$FULL_CMD"
+    # Direct array execution instead of eval
+    "${FULL_CMD[@]}"
 else
     echo "[CH4RCH] Dry-run mode. Use DRY_RUN=false to execute."
 fi
 
 # Log to hash-chain
-if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
-    "$CH4RCH_SRC/build-tools/hash-chain.sh" "GUI_ISOLATE domain=$DOMAIN cmd=$CMD"
+if [[ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]]; then
+    "$CH4RCH_SRC/build-tools/hash-chain.sh" "GUI_ISOLATE domain=$DOMAIN cmd=$USER_CMD"
 fi
