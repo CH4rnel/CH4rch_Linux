@@ -1,17 +1,66 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # Declarative configuration utility for CH4rch Linux.
-# Implements ADR-04: declarative layer over pacman via plan/apply.
+# Implements declarative layer over pacman via plan/apply.
+# Features YAML parsing, package installation, system settings, idempotency.
 
-set -e
+set -euo pipefail
 
+# shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
 
 CONFIG_DIR="$CH4RCH_SRC/configs"
 STATE_FILE="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/current-state.yaml"
 
+# Parse YAML using Python (available in Arch Linux)
+parse_yaml() {
+    local file="$1"
+    python3 << EOF
+import yaml
+import sys
+
+with open('$file', 'r') as f:
+    config = yaml.safe_load(f)
+
+# Output system settings
+if 'system' in config:
+    for key, value in config['system'].items():
+        print(f"system.{key}={value}")
+
+# Output packages
+if 'packages' in config:
+    for pkg in config['packages']:
+        print(f"package={pkg}")
+EOF
+}
+
+# Get current system state
+get_current_state() {
+    local key="$1"
+    case "$key" in
+        hostname)
+            cat /etc/hostname 2>/dev/null || echo ""
+            ;;
+        timezone)
+            readlink /etc/localtime 2>/dev/null | sed 's|/usr/share/zoneinfo/||' || echo ""
+            ;;
+        locale)
+            grep "^LANG=" /etc/locale.conf 2>/dev/null | cut -d= -f2 || echo ""
+            ;;
+        package)
+            local pkg="$2"
+            if pacman -Q "$pkg" &>/dev/null; then
+                echo "installed"
+            else
+                echo "not_installed"
+            fi
+            ;;
+    esac
+}
+
 plan() {
     echo "[CH4RCH] Planning configuration changes..."
+    echo ""
     
     if [ ! -d "$CONFIG_DIR" ]; then
         echo "[CH4RCH] WARNING: No configuration directory found at $CONFIG_DIR"
@@ -19,31 +68,140 @@ plan() {
         return 0
     fi
     
-    echo "[CH4RCH] Current configuration files:"
-    find "$CONFIG_DIR" -type f -name "*.yaml" -o -name "*.yml" | while read -r file; do
-        echo "  - $(basename "$file")"
+    local changes_found=0
+    
+    # Process each YAML config file
+    for config_file in "$CONFIG_DIR"/*.yaml "$CONFIG_DIR"/*.yml; do
+        [ -f "$config_file" ] || continue
+        
+        echo "[CH4RCH] Analyzing $(basename "$config_file")..."
+        
+        # Parse YAML and check each setting
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^system\.([a-z_]+)=(.+)$ ]]; then
+                local key="${BASH_REMATCH[1]}"
+                local desired="${BASH_REMATCH[2]}"
+                local current
+                current=$(get_current_state "$key")
+                
+                if [[ "$current" != "$desired" ]]; then
+                    echo "  [CHANGE] system.$key: '$current' → '$desired'"
+                    changes_found=1
+                else
+                    echo "  [OK] system.$key: already '$desired'"
+                fi
+            elif [[ "$line" =~ ^package=(.+)$ ]]; then
+                local pkg="${BASH_REMATCH[1]}"
+                local status
+                status=$(get_current_state "package" "$pkg")
+                
+                if [[ "$status" != "installed" ]]; then
+                    echo "  [INSTALL] package: $pkg"
+                    changes_found=1
+                else
+                    echo "  [OK] package: $pkg already installed"
+                fi
+            fi
+        done < <(parse_yaml "$config_file")
+        
+        echo ""
     done
     
-    echo "[CH4RCH] Plan completed. No actual changes made."
+    if [[ $changes_found -eq 0 ]]; then
+        echo "[CH4RCH] No changes needed. System is already in desired state."
+    else
+        echo "[CH4RCH] Plan completed. Run 'ch4rchctl apply' to apply changes."
+    fi
 }
 
 apply() {
     echo "[CH4RCH] Applying configuration changes..."
+    echo ""
     
     if [ ! -d "$CONFIG_DIR" ]; then
         echo "[CH4RCH] WARNING: No configuration directory found at $CONFIG_DIR"
         return 0
     fi
     
-    # For MVP: just copy config files to rootfs overlay
-    mkdir -p "$CH4RCH_ROOTFS/etc/ch4rch"
-    cp -r "$CONFIG_DIR"/* "$CH4RCH_ROOTFS/etc/ch4rch/" 2>/dev/null || true
+    local changes_applied=0
     
-    echo "[CH4RCH] Configuration applied successfully."
+    # Process each YAML config file
+    for config_file in "$CONFIG_DIR"/*.yaml "$CONFIG_DIR"/*.yml; do
+        [ -f "$config_file" ] || continue
+        
+        echo "[CH4RCH] Processing $(basename "$config_file")..."
+        
+        local packages_to_install=()
+        
+        # Parse YAML and apply settings
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^system\.([a-z_]+)=(.+)$ ]]; then
+                local key="${BASH_REMATCH[1]}"
+                local desired="${BASH_REMATCH[2]}"
+                local current
+                current=$(get_current_state "$key")
+                
+                if [[ "$current" != "$desired" ]]; then
+                    case "$key" in
+                        hostname)
+                            echo "$desired" > "${CH4RCH_ROOTFS:-/}/etc/hostname"
+                            echo "  [APPLIED] hostname: $desired"
+                            changes_applied=1
+                            ;;
+                        timezone)
+                            ln -sf "/usr/share/zoneinfo/$desired" "${CH4RCH_ROOTFS:-/}/etc/localtime"
+                            echo "  [APPLIED] timezone: $desired"
+                            changes_applied=1
+                            ;;
+                        locale)
+                            echo "LANG=$desired" > "${CH4RCH_ROOTFS:-/}/etc/locale.conf"
+                            echo "  [APPLIED] locale: $desired"
+                            changes_applied=1
+                            ;;
+                    esac
+                else
+                    echo "  [SKIP] $key: already '$desired' (idempotent)"
+                fi
+            elif [[ "$line" =~ ^package=(.+)$ ]]; then
+                local pkg="${BASH_REMATCH[1]}"
+                local status
+                status=$(get_current_state "package" "$pkg")
+                
+                if [[ "$status" != "installed" ]]; then
+                    packages_to_install+=("$pkg")
+                else
+                    echo "  [SKIP] package $pkg: already installed (idempotent)"
+                fi
+            fi
+        done < <(parse_yaml "$config_file")
+        
+        # Install packages in batch
+        if [[ ${#packages_to_install[@]} -gt 0 ]]; then
+            echo "  [INSTALLING] packages: ${packages_to_install[*]}"
+            if [[ -n "${CH4RCH_ROOTFS:-}" ]]; then
+                pacman -Sy --root "$CH4RCH_ROOTFS" --noconfirm "${packages_to_install[@]}" || {
+                    echo "  [WARNING] Some packages failed to install"
+                }
+            else
+                pacman -Sy --noconfirm "${packages_to_install[@]}" || {
+                    echo "  [WARNING] Some packages failed to install"
+                }
+            fi
+            changes_applied=1
+        fi
+        
+        echo ""
+    done
+    
+    if [[ $changes_applied -eq 0 ]]; then
+        echo "[CH4RCH] No changes applied. System is already in desired state (idempotent)."
+    else
+        echo "[CH4RCH] Configuration applied successfully."
+    fi
     
     # Log to hash-chain
     if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
-        "$CH4RCH_SRC/build-tools/hash-chain.sh" "CONFIG_APPLY files=$(find "$CONFIG_DIR" -type f | wc -l)"
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "CONFIG_APPLY changes=$changes_applied"
     fi
 }
 
@@ -57,8 +215,8 @@ case "${1:-}" in
         ;;
     *)
         echo "Usage: $0 {plan|apply}"
-        echo "  plan    - Show what configuration changes would be made"
-        echo "  apply   - Apply configuration changes"
+        echo "  plan    - Show what configuration changes would be made (diff)"
+        echo "  apply   - Apply configuration changes (idempotent)"
         exit 1
         ;;
 esac
