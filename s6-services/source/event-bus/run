@@ -1,0 +1,3 @@
+#!/command/execlineb -P
+foreground { echo "[CH4RCH] Event bus starting" }
+exec /etc/ch4rch/event-bus

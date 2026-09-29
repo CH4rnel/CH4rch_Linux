@@ -1,0 +1,3 @@
+#!/command/execlineb -P
+foreground { echo "[CH4RCH] Getty service starting" }
+exec agetty --noclear tty1 linux

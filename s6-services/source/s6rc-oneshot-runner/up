@@ -1,0 +1,3 @@
+#!/command/execlineb -P
+# Initialize s6-rc database
+s6-rc -v -b change

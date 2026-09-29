@@ -1,0 +1,3 @@
+#!/command/execlineb -P
+foreground { echo "[CH4RCH] Network service starting" }
+exec dhcpcd --nobackground -w
