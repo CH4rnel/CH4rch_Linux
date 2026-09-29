@@ -39,7 +39,7 @@ get_current_state() {
     local key="$1"
     case "$key" in
         hostname)
-            cat /etc/hostname 2>/dev/null || echo ""
+            head -n 1 /etc/hostname 2>/dev/null | tr -d '[:space:]' || echo ""
             ;;
         timezone)
             readlink /etc/localtime 2>/dev/null | sed 's|/usr/share/zoneinfo/||' || echo ""
