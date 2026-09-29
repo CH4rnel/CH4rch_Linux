@@ -1,15 +1,16 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # MicroVM Launcher for CH4rch Linux.
 # Disposable VM with read-only golden image + tmpfs/overlay.
+# Replaced eval with bash arrays to prevent shell injection.
 
-set -e
+set -euo pipefail
 
 # shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
 
 # Default values
-BACKEND="qemu" # fallback to qemu if cloud-hypervisor is not available
+BACKEND="qemu"
 ROOTFS=""
 OVERLAY_DIR=""
 MEMORY="512M"
@@ -44,13 +45,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate required arguments
-if [ -z "$ROOTFS" ] || [ -z "$OVERLAY_DIR" ]; then
-    echo "[CH4RCH] ERROR: --rootfs and --overlay are required."
+if [[ -z "$ROOTFS" || -z "$OVERLAY_DIR" ]]; then
+    echo "[CH4RCH] ERROR: --rootfs and --overlay are required." >&2
     usage
 fi
 
-if [ ! -f "$ROOTFS" ]; then
-    echo "[CH4RCH] ERROR: Rootfs image not found at $ROOTFS"
+if [[ ! -f "$ROOTFS" ]]; then
+    echo "[CH4RCH] ERROR: Rootfs image not found at $ROOTFS" >&2
     exit 1
 fi
 
@@ -59,11 +60,11 @@ mkdir -p "$OVERLAY_DIR"
 echo "[CH4RCH] Prepared ephemeral overlay at: $OVERLAY_DIR"
 
 # Determine backend executable
-if [ "$BACKEND" = "cloud-hypervisor" ]; then
+if [[ "$BACKEND" = "cloud-hypervisor" ]]; then
     if command -v cloud-hypervisor &> /dev/null; then
         VM_CMD="cloud-hypervisor"
     else
-        echo "[CH4RCH] WARNING: cloud-hypervisor not found, falling back to qemu-system-x86_64"
+        echo "[CH4RCH] WARNING: cloud-hypervisor not found, falling back to qemu-system-x86_64" >&2
         VM_CMD="qemu-system-x86_64"
         BACKEND="qemu"
     fi
@@ -72,37 +73,50 @@ else
 fi
 
 # Check KVM access
-if [ ! -w /dev/kvm ]; then
-    echo "[CH4RCH] WARNING: No write access to /dev/kvm. Performance will be degraded (TCG mode)."
+if [[ ! -w /dev/kvm ]]; then
+    echo "[CH4RCH] WARNING: No write access to /dev/kvm. Performance will be degraded (TCG mode)." >&2
 fi
 
-# Build command
-if [ "$BACKEND" = "cloud-hypervisor" ]; then
-    CMD="$VM_CMD --cpus boot=$CPUS --memory size=$MEMORY --disk path=$ROOTFS --disk path=$OVERLAY_DIR --console off --serial tty"
+# P2-2 FIX: Build command as bash array to prevent shell injection
+if [[ "$BACKEND" = "cloud-hypervisor" ]]; then
+    CMD=(
+        "$VM_CMD"
+        "--cpus" "boot=$CPUS"
+        "--memory" "size=$MEMORY"
+        "--disk" "path=$ROOTFS"
+        "--disk" "path=$OVERLAY_DIR"
+        "--console" "off"
+        "--serial" "tty"
+    )
 else
-    # QEMU fallback with basic virtio and tmpfs-like overlay simulation (for MVP, we pass overlay as a second disk or use specific qemu overlay features)
-    # For true MVP simplicity, we pass both as virtio-blk devices.
-    CMD="$VM_CMD -enable-kvm -m $MEMORY -smp $CPUS \
-        -drive file=$ROOTFS,format=raw,readonly=on,if=virtio \
-        -drive file=$OVERLAY_DIR,format=raw,if=virtio \
-        -nographic -serial mon:stdio"
+    CMD=(
+        "$VM_CMD"
+        "-enable-kvm"
+        "-m" "$MEMORY"
+        "-smp" "$CPUS"
+        "-drive" "file=$ROOTFS,format=raw,readonly=on,if=virtio"
+        "-drive" "file=$OVERLAY_DIR,format=raw,if=virtio"
+        "-nographic"
+        "-serial" "mon:stdio"
+    )
 fi
 
 echo "[CH4RCH] Generated MicroVM command:"
-echo "$CMD"
+echo "  ${CMD[*]}"
 
-if [ "$DRY_RUN" = "true" ]; then
+if [[ "$DRY_RUN" = "true" ]]; then
     echo "[CH4RCH] Dry-run mode. Use --run to actually start the MicroVM."
 else
     echo "[CH4RCH] Starting MicroVM..."
+
     # Log to hash-chain
-    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+    if [[ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]]; then
         "$CH4RCH_SRC/build-tools/hash-chain.sh" "MICROVM_LAUNCH backend=$BACKEND rootfs=$ROOTFS"
     fi
-    
-    # Execute
-    eval "$CMD"
-    
+
+    # fix. Direct array execution instead of eval
+    "${CMD[@]}"
+
     # Cleanup overlay after exit (Disposable VM behavior)
     echo "[CH4RCH] MicroVM exited. Cleaning up ephemeral overlay..."
     rm -rf "$OVERLAY_DIR"
