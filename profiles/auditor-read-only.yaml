@@ -1,20 +1,35 @@
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
-# Default Read-Only Auditor Agent Profile
-# Implements Phase 14 capabilities in a safe, non-remediation mode.
+# Read-Only Auditor Agent Profile.
+# Implements capabilities in a safe, non-remediation mode.
 
 agent:
-  name: "System Auditor"
+  name: "System Auditor (Read-Only)"
   version: "1.0.0"
   mode: "read-only"
 
+enabled: false
+
+isolation:
+  backend: bubblewrap
+  privilege: unprivileged
+  network: lan-only
+  filesystem:
+    read_only: ["/etc", "/usr", "/var/log"]
+    read_write: []
+  ttl: 300
+
 capabilities:
-  - "system.audit.read"
-  - "network.scan.local"
-  - "cache.inspect"
+  - id: system.audit.read
+    risk: low
+  - id: network.scan.local
+    risk: medium
+    scope: lan-only
+  - id: cache.inspect
+    risk: low
 
-restrictions:
-  - "no_network_wan"
-  - "no_filesystem_write"
-  - "no_package_install"
+ui:
+  trigger: context-menu
+  hotkey: "Super+Shift+A"
 
-sandbox_profile: "strict-readonly"
+audit:
+  log_to: trust-chain
