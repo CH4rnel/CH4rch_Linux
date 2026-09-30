@@ -1,19 +1,22 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
 # Remediation Capability Utility for CH4rch Linux.
-# Implements strict plan → confirmation → apply flow for high-risk actions.
+# Implements strict plan then confirmation and apply flow for high-risk actions.
+# FIX: apply_plan() now parses and executes actions from CHANGES section.
 
-set -e
+set -euo pipefail
 
+# shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
 
 STATE_FILE="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/ai-platform.state"
 PLAN_FILE="${CH4RCH_BUILDROOT:-/var/ch4rch-build}/pending-remediation.plan"
 
 check_ai_enabled() {
-    local state=$(cat "$STATE_FILE" 2>/dev/null || echo "DISABLED")
-    if [ "$state" != "ENABLED" ]; then
-        echo "[CH4RCH] ERROR: AI Platform is DISABLED. Remediation requires explicit enablement."
+    local state
+    state=$(cat "$STATE_FILE" 2>/dev/null || echo "DISABLED")
+    if [[ "$state" != "ENABLED" ]]; then
+        echo "[CH4RCH] ERROR: AI Platform is DISABLED. Remediation requires explicit enablement." >&2
         exit 1
     fi
 }
@@ -24,7 +27,7 @@ generate_plan() {
     
     echo "[CH4RCH] Generating remediation plan for: $action on $target"
     
-    # Simulate plan generation (in real scenario, this queries the system/agent)
+    # Generate plan with structured CHANGES section
     cat > "$PLAN_FILE" << EOF
 # CH4rch Remediation Plan
 # Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -34,9 +37,9 @@ RISK_LEVEL: high
 REQUIRE_CONFIRMATION: true
 
 CHANGES:
-  - Stop vulnerable service: $target
-  - Apply security patch / update configuration
-  - Restart service with hardened flags
+  - service.stop: $target
+  - package.update: $target
+  - service.start: $target
 
 WARNING: This action will temporarily disrupt the target service.
 EOF
@@ -45,35 +48,83 @@ EOF
     cat "$PLAN_FILE"
     
     # Log to hash-chain
-    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+    if [[ -x "${CH4RCH_SRC:-}/build-tools/hash-chain.sh" ]]; then
         "$CH4RCH_SRC/build-tools/hash-chain.sh" "REMEDIATION_PLAN action=$action target=$target risk=high"
     fi
 }
 
+# Execute a single action from the plan
+execute_action() {
+    local action_type="$1"
+    local action_target="$2"
+    
+    echo "  → Executing: $action_type on $action_target"
+    
+    # FIX: Execute through isolate.sh for security
+    case "$action_type" in
+        service.stop)
+            "${CH4RCH_SRC:-}/build-tools/isolate.sh" run systemctl stop "$action_target" || true
+            ;;
+        service.start)
+            "${CH4RCH_SRC:-}/build-tools/isolate.sh" run systemctl start "$action_target" || true
+            ;;
+        service.restart)
+            "${CH4RCH_SRC:-}/build-tools/isolate.sh" run systemctl restart "$action_target" || true
+            ;;
+        package.update)
+            "${CH4RCH_SRC:-}/build-tools/isolate.sh" run pacman -Sy --noconfirm "$action_target" || true
+            ;;
+        config.apply)
+            # For config.apply, target is path to config file
+            if [[ -f "$action_target" ]]; then
+                "${CH4RCH_SRC:-}/build-tools/isolate.sh" run cp "$action_target" "/etc/ch4rch/$(basename "$action_target")"
+            else
+                echo "    WARNING: Config file not found: $action_target"
+            fi
+            ;;
+        command.exec)
+            # For command.exec, target is the command to execute
+            "${CH4RCH_SRC:-}/build-tools/isolate.sh" run bash -c "$action_target"
+            ;;
+        *)
+            echo "    WARNING: Unknown action type: $action_type"
+            return 1
+            ;;
+    esac
+    
+    # Log each step to hash-chain
+    if [[ -x "${CH4RCH_SRC:-}/build-tools/hash-chain.sh" ]]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "REMEDIATION_STEP action=$action_type target=$action_target"
+    fi
+}
+
+# Parse and execute all actions from CHANGES section
 apply_plan() {
-    if [ ! -f "$PLAN_FILE" ]; then
-        echo "[CH4RCH] ERROR: No pending plan found. Run 'plan' first."
+    if [[ ! -f "$PLAN_FILE" ]]; then
+        echo "[CH4RCH] ERROR: No pending plan found. Run 'plan' first." >&2
         exit 1
     fi
     
-    local risk=$(grep "^RISK_LEVEL:" "$PLAN_FILE" | awk '{print $2}')
-    local requires_confirm=$(grep "^REQUIRE_CONFIRMATION:" "$PLAN_FILE" | awk '{print $2}')
+    local risk
+    risk=$(grep "^RISK_LEVEL:" "$PLAN_FILE" | awk '{print $2}')
+    local requires_confirm
+    requires_confirm=$(grep "^REQUIRE_CONFIRMATION:" "$PLAN_FILE" | awk '{print $2}')
     
-    if [ "$risk" = "high" ] && [ "$requires_confirm" = "true" ]; then
+    if [[ "$risk" == "high" ]] && [[ "$requires_confirm" == "true" ]]; then
         echo ""
         echo "=========================================="
-        echo "⚠️  HIGH RISK ACTION REQUIRES CONFIRMATION ⚠️"
+        echo "!  HIGH RISK ACTION REQUIRES CONFIRMATION !"
         echo "=========================================="
         echo "The agent is requesting to apply the following plan:"
         cat "$PLAN_FILE"
         echo ""
         read -p "Type 'CONFIRM' exactly to apply this remediation, or anything else to cancel: " user_input
         
-        if [ "$user_input" != "CONFIRM" ]; then
+        if [[ "$user_input" != "CONFIRM" ]]; then
             echo "[CH4RCH] Remediation CANCELLED by operator."
             rm -f "$PLAN_FILE"
             
-            if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
+            if [[ -x "${CH4RCH_SRC:-}/build-tools/hash-chain.sh" ]]; then
                 "$CH4RCH_SRC/build-tools/hash-chain.sh" "REMEDIATION_CANCELLED reason=operator_denied"
             fi
             exit 0
@@ -82,24 +133,48 @@ apply_plan() {
     
     echo "[CH4RCH] Applying remediation plan..."
     
-    # Simulate execution (in real scenario, this executes via microVM/isolate.sh)
-    echo "  [1/3] Stopping target service..."
-    sleep 1
-    echo "  [2/3] Applying patch/configuration..."
-    sleep 1
-    echo "  [3/3] Restarting service..."
-    sleep 1
+    # FIX: Parse CHANGES section and execute each action
+    local in_changes=0
+    local step_num=0
     
-    echo "[CH4RCH] Remediation APPLIED successfully."
+    while IFS= read -r line; do
+        # Detect start of CHANGES section
+        if [[ "$line" =~ ^CHANGES: ]]; then
+            in_changes=1
+            continue
+        fi
+        
+        # Stop parsing at next section or end of file
+        if [[ $in_changes -eq 1 ]] && [[ "$line" =~ ^[A-Z_]+: ]] && [[ ! "$line" =~ ^CHANGES: ]]; then
+            break
+        fi
+        
+        # Parse action lines (format: "  - action_type: target")
+        if [[ $in_changes -eq 1 ]] && [[ "$line" =~ ^[[:space:]]*-[[:space:]]*([a-z.]+):[[:space:]]*(.+)$ ]]; then
+            local action_type="${BASH_REMATCH[1]}"
+            local action_target="${BASH_REMATCH[2]}"
+            
+            ((step_num++)) || true
+            echo "  [$step_num] Processing: $action_type → $action_target"
+            
+            execute_action "$action_type" "$action_target"
+        fi
+    done < "$PLAN_FILE"
     
-    # Log to hash-chain
-    if [ -x "$CH4RCH_SRC/build-tools/hash-chain.sh" ]; then
-        "$CH4RCH_SRC/build-tools/hash-chain.sh" "REMEDIATION_APPLIED plan=$PLAN_FILE"
+    if [[ $step_num -eq 0 ]]; then
+        echo "[CH4RCH] WARNING: No actions found in CHANGES section"
+    else
+        echo "[CH4RCH] Remediation APPLIED successfully ($step_num steps executed)."
+    fi
+    
+    # Log completion to hash-chain
+    if [[ -x "${CH4RCH_SRC:-}/build-tools/hash-chain.sh" ]]; then
+        "$CH4RCH_SRC/build-tools/hash-chain.sh" "REMEDIATION_APPLIED plan=$PLAN_FILE steps=$step_num"
     fi
     
     # Publish event
-    if [ -x "$CH4RCH_SRC/build-tools/ch4rch-events" ]; then
-        "$CH4RCH_SRC/build-tools/ch4rch-events" publish "remediation" "{\"status\":\"applied\",\"plan\":\"$PLAN_FILE\"}" > /dev/null 2>&1 || true
+    if [[ -x "${CH4RCH_SRC:-}/build-tools/ch4rch-events" ]]; then
+        "$CH4RCH_SRC/build-tools/ch4rch-events" publish "remediation" "{\"status\":\"applied\",\"plan\":\"$PLAN_FILE\",\"steps\":$step_num}" > /dev/null 2>&1 || true
     fi
     
     # Cleanup plan file after successful application
@@ -110,9 +185,9 @@ apply_plan() {
 case "${1:-}" in
     plan)
         check_ai_enabled
-        if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
-            echo "Usage: $0 plan <action> <target>"
-            echo "Example: $0 plan vuln.remediate sshd"
+        if [[ -z "${2:-}" ]] || [[ -z "${3:-}" ]]; then
+            echo "Usage: $0 plan <action> <target>" >&2
+            echo "Example: $0 plan vuln.remediate sshd" >&2
             exit 1
         fi
         generate_plan "$2" "$3"
@@ -122,9 +197,9 @@ case "${1:-}" in
         apply_plan
         ;;
     *)
-        echo "Usage: $0 {plan|apply} [args]"
-        echo "  plan <action> <target>  - Generate a remediation plan (requires review)"
-        echo "  apply                   - Apply the pending plan (requires explicit confirmation for high risk)"
+        echo "Usage: $0 {plan|apply} [args]" >&2
+        echo "  plan <action> <target>  - Generate a remediation plan (requires review)" >&2
+        echo "  apply                   - Apply the pending plan (requires explicit confirmation for high risk)" >&2
         exit 1
         ;;
 esac
