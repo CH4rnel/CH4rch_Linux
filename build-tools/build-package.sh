@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
 # 𒀭 𝙲𝙷𝟺𝚛𝚌𝚑 𝙻𝚒𝚗𝚞𝚡 𒀭
+# build-package.sh
+# Purpose Build all CH4rch packages from pkgbuilds/core/
+# Logic Iterates through pkgbuilds/core/*, runs makepkg, copies to PKGDEST.
 
-set -e
+set -euo pipefail
 
 # shellcheck disable=SC1091
 source "$(dirname "$0")/build.conf"
 
 build_repo() {
-    REPO_NAME=$1
+    local repo_name="$1"
+    local repo_dir="$CH4RCH_SRC/pkgbuilds/$repo_name"
 
-    for dir in "$CH4RCH_SRC/pkgbuilds/$REPO_NAME"/*; do
+    if [[ ! -d "$repo_dir" ]]; then
+        echo "[CH4RCH] WARNING: Repository directory $repo_dir does not exist, skipping"
+        return 0
+    fi
 
-        [ -d "$dir" ] || continue
-        [ -f "$dir/PKGBUILD" ] || continue
+    for dir in "$repo_dir"/*; do
+        [[ -d "$dir" ]] || continue
+        [[ -f "$dir/PKGBUILD" ]] || continue
 
         echo "[CH4RCH] Building $(basename "$dir")"
 
@@ -27,6 +35,7 @@ build_repo() {
     done
 }
 
+# FIX: Only build repos that exist (core is the only one currently)
 build_repo core
-build_repo extra
-build_repo community
+
+echo "[CH4RCH] Package build completed"
